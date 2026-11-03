@@ -1,4 +1,13 @@
 {
+    "Basic configuration": "Basisconfiguratie",
+    "Printer configuration": "Printerconfiguratie",
+    "Add printer": "Printer toevoegen",
+    "Edit printer": "Printer bewerken",
+    "Edit printer configuration": "Printerconfiguratie bewerken",
+    "Remove printer": "Printer verwijderen",
+    "Remove this printer?": "Deze printer verwijderen?",
+    "Online": "Online",
+    "Model": "Model",
     "ipp adapter settings": "Adapterinstellingen voor ipp",
     "Printers": "Printers",
     "ID": "ID",

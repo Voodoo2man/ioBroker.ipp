@@ -1,4 +1,13 @@
 {
+    "Basic configuration": "Configuración básica",
+    "Printer configuration": "Configuración de impresoras",
+    "Add printer": "Añadir impresora",
+    "Edit printer": "Editar impresora",
+    "Edit printer configuration": "Editar configuración de impresora",
+    "Remove printer": "Eliminar impresora",
+    "Remove this printer?": "¿Eliminar esta impresora?",
+    "Online": "En línea",
+    "Model": "Modelo",
     "ipp adapter settings": "Configuración del adaptador ipp",
     "Printers": "Impresoras",
     "ID": "ID",

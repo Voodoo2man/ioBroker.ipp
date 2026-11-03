@@ -31,7 +31,7 @@ function normalizePrinterId(value: string): string {
         .replace(/ß/g, 'ss');
 }
 
-export function parsePrinterConfig(value: unknown): PrinterConfigResult {
+export function parsePrinterConfig(value: unknown, previousId?: string): PrinterConfigResult {
     const errors = getPrinterConfigErrors(value);
     if (!value || typeof value !== 'object' || Array.isArray(value) || errors.length > 0) {
         return { errors };
@@ -50,9 +50,15 @@ export function parsePrinterConfig(value: unknown): PrinterConfigResult {
         return { errors };
     }
 
+    const id = normalizePrinterId(printer.id as string);
+    if (previousId && id !== previousId) {
+        errors.push('id cannot be changed after creation');
+        return { errors };
+    }
+
     return {
         config: {
-            id: normalizePrinterId(printer.id as string),
+            id,
             label: typeof printer.label === 'string' ? printer.label : undefined,
             host: printer.host as string,
             port: printer.port as number | string | undefined,
@@ -62,6 +68,18 @@ export function parsePrinterConfig(value: unknown): PrinterConfigResult {
         },
         errors: [],
     };
+}
+
+export function getUniquePrinterConfigs(values: unknown[]): PrinterConfig[] {
+    const ids = new Set<string>();
+    return values.flatMap(value => {
+        const parsed = parsePrinterConfig(value);
+        if (!parsed.config || ids.has(parsed.config.id)) {
+            return [];
+        }
+        ids.add(parsed.config.id);
+        return [parsed.config];
+    });
 }
 
 export function getPrinterConfigErrors(value: unknown): string[] {

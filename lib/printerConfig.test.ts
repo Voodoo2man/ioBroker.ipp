@@ -1,5 +1,10 @@
 import { expect } from 'chai';
-import { describePrinterConfig, getPrinterConfigErrors, parsePrinterConfig } from './printerConfig';
+import {
+    describePrinterConfig,
+    getPrinterConfigErrors,
+    getUniquePrinterConfigs,
+    parsePrinterConfig,
+} from './printerConfig';
 
 describe('printerConfig', () => {
     it('accepts the values shown in the reported Admin configuration', () => {
@@ -24,6 +29,28 @@ describe('printerConfig', () => {
 
         expect(parsed.errors).to.deep.equal([]);
         expect(parsed.config?.id).to.equal('Buero-Uebersicht');
+
+        const uppercase = parsePrinterConfig({ id: 'ÄÖÜ-ß', host: 'printer.local' });
+        expect(uppercase.errors).to.deep.equal([]);
+        expect(uppercase.config?.id).to.equal('AeOeUe-ss');
+    });
+
+    it('keeps only the first printer when configured IDs duplicate after normalization', () => {
+        const printers = getUniquePrinterConfigs([
+            { id: 'Buero', host: 'first.local' },
+            { id: 'Büro', host: 'duplicate.local' },
+            { id: 'Other', host: 'other.local' },
+        ]);
+
+        expect(printers.map(printer => printer.id)).to.deep.equal(['Buero', 'Other']);
+        expect(printers[0].host).to.equal('first.local');
+    });
+
+    it('rejects changing a printer ID while editing', () => {
+        const parsed = parsePrinterConfig({ id: 'Other', host: 'printer.local' }, 'Original');
+
+        expect(parsed.config).to.equal(undefined);
+        expect(parsed.errors).to.deep.equal(['id cannot be changed after creation']);
     });
 
     it('explains invalid fields without exposing configured values', () => {
