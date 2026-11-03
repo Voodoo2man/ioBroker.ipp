@@ -14,13 +14,13 @@ Node.js 22 or newer, Admin 8.2.0 or newer, and js-controller 7.2.2 or newer are 
 
 ## Configuration
 
-Add one or more printers in the adapter settings. Each row contains:
+Configure polling interval and request timeout in the **Basic configuration** tab. Add and manage printers in the **Printer configuration** tab using the Device Manager. Use its **Add printer**, **Edit**, and **Remove** actions; printer cards show the configured host, live connection state, and model when reported.
 
-Printer entries are shown in individually collapsible sections, with fields arranged responsively for narrow and wide screens.
+The Device Manager stores printers in the existing `native.printers` configuration array, so existing printer configurations remain compatible.
 
 | Setting | Description |
 | --- | --- |
-| ID | Stable object-tree identifier; use 1-32 letters, digits, underscores, or hyphens. German umlauts are transliterated (`ä` to `ae`, `ö` to `oe`, `ü` to `ue`, `ß` to `ss`). |
+| ID | Stable object-tree identifier; use 1-32 letters, digits, underscores, or hyphens. German umlauts are transliterated (`ä` to `ae`, `ö` to `oe`, `ü` to `ue`, `ß` to `ss`). The ID cannot be changed after creation because it determines the printer's state IDs. |
 | Label | Display name for the printer. |
 | Host | Printer hostname or IP address. |
 | Port | IPP port; defaults to `631`. |
@@ -47,6 +47,10 @@ For supply reporting, the adapter combines `marker-names` with the corresponding
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
+### **WORK IN PROGRESS**
+
+- (Voodoo2man) Replaced the printer list with Device Manager configuration and split basic settings into a separate tab.
+
 ### 0.0.2 (2026-10-28)
 
 - (Voodoo2man) Added Node.js 22 support and documented printer supply and counter attributes.

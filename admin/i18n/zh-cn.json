@@ -1,4 +1,13 @@
 {
+    "Basic configuration": "基本配置",
+    "Printer configuration": "打印机配置",
+    "Add printer": "添加打印机",
+    "Edit printer": "编辑打印机",
+    "Edit printer configuration": "编辑打印机配置",
+    "Remove printer": "移除打印机",
+    "Remove this printer?": "确定移除此打印机吗？",
+    "Online": "在线",
+    "Model": "型号",
     "ipp adapter settings": "ipp 适配器设置",
     "Printers": "打印机",
     "ID": "ID",

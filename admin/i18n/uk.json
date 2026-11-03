@@ -1,4 +1,13 @@
 {
+    "Basic configuration": "Основні налаштування",
+    "Printer configuration": "Налаштування принтерів",
+    "Add printer": "Додати принтер",
+    "Edit printer": "Змінити принтер",
+    "Edit printer configuration": "Змінити налаштування принтера",
+    "Remove printer": "Видалити принтер",
+    "Remove this printer?": "Видалити цей принтер?",
+    "Online": "У мережі",
+    "Model": "Модель",
     "ipp adapter settings": "Налаштування адаптера ipp",
     "Printers": "Принтери",
     "ID": "Ідентифікатор",

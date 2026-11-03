@@ -1,51 +1,45 @@
 {
     "i18n": true,
-    "type": "panel",
+    "type": "tabs",
     "items": {
+        "basic": {
+            "type": "panel",
+            "label": "Basic configuration",
+            "items": {
+                "intervalSeconds": {
+                    "type": "number",
+                    "label": "Polling interval (seconds)",
+                    "default": 60,
+                    "min": 10,
+                    "max": 86400,
+                    "step": 1,
+                    "xs": 12,
+                    "sm": 6
+                },
+                "timeoutMs": {
+                    "type": "number",
+                    "label": "Request timeout (milliseconds)",
+                    "default": 5000,
+                    "min": 500,
+                    "max": 30000,
+                    "step": 500,
+                    "xs": 12,
+                    "sm": 6
+                }
+            }
+        },
         "printers": {
-            "type": "accordion",
-            "label": "Printers",
-            "titleAttr": "id",
-            "items": [
-                { "attr": "id", "type": "text", "label": "ID", "xs": 12, "sm": 6 },
-                { "attr": "label", "type": "text", "label": "Label", "xs": 12, "sm": 6 },
-                { "attr": "host", "type": "text", "label": "Host", "xs": 12, "md": 8 },
-                { "attr": "port", "type": "number", "label": "Port", "default": 631, "xs": 12, "md": 4 },
-                { "attr": "basePath", "type": "text", "label": "IPP resource path", "default": "/ipp/print", "xs": 12 },
-                { "attr": "ssl", "type": "checkbox", "label": "Use TLS", "xs": 12, "sm": 6 },
-                { "attr": "verifySsl", "type": "checkbox", "label": "Verify TLS certificate", "default": false, "xs": 12, "sm": 6 }
-            ],
-            "xs": 12,
-            "sm": 12,
-            "md": 12,
-            "lg": 12,
-            "xl": 12
-        },
-        "intervalSeconds": {
-            "type": "number",
-            "label": "Polling interval (seconds)",
-            "default": 60,
-            "min": 10,
-            "max": 86400,
-            "step": 1,
-            "xs": 12,
-            "sm": 6,
-            "md": 6,
-            "lg": 6,
-            "xl": 6
-        },
-        "timeoutMs": {
-            "type": "number",
-            "label": "Request timeout (milliseconds)",
-            "default": 5000,
-            "min": 500,
-            "max": 30000,
-            "step": 500,
-            "xs": 12,
-            "sm": 6,
-            "md": 6,
-            "lg": 6,
-            "xl": 6
+            "type": "panel",
+            "label": "Printer configuration",
+            "items": {
+                "_deviceManager": {
+                    "type": "deviceManager",
+                    "sm": 12,
+                    "style": { "width": "100%", "height": "100%", "overflow": "hidden" }
+                }
+            },
+            "style": { "width": "100%", "height": "100%", "overflow": "hidden" },
+            "innerStyle": { "width": "100%", "height": "100%", "overflow": "hidden" }
         }
     }
 }
