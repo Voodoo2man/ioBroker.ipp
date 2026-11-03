@@ -1,6 +1,6 @@
 {
   "name": "iobroker.ipp",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "Read-only network printer monitoring over Internet Printing Protocol (IPP)",
   "author": {
     "name": "Voodoo2man",

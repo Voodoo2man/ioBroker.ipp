@@ -2,8 +2,21 @@
   "common": {
     "name": "ipp",
     "nogit": true,
-    "version": "0.0.2",
+    "version": "0.1.0",
     "news": {
+      "0.1.0": {
+        "en": "Replaced the printer list with Device Manager configuration and split basic settings into a separate tab.",
+        "de": "Ersetzte die Druckerliste durch den Gerätemanager und teilte die Grundeinstellungen auf.",
+        "ru": "Список принтеров заменен конфигурацией диспетчера устройств и разделил основные настройки на отдельной вкладке.",
+        "pt": "Substituiu a lista de impressoras pelo Device Manager e dividiu as configurações básicas em uma aba.",
+        "nl": "De printerlijst is vervangen door de configuratie van Apparaatbeheer en de basisinstellingen zijn opgedeeld in een apart tabblad.",
+        "fr": "La liste des imprimantes a été remplacée par Device Manager et les paramètres de base ont été regroupés.",
+        "it": "Ha sostituito l'elenco delle stampanti con Device Manager e ha diviso le impostazioni di base.",
+        "es": "Sustituyó la lista de impresoras por la configuración de Device Manager y dividió los ajustes básicos en otra pestaña.",
+        "pl": "Wymieniono listę drukarek konfiguracją Menedżera urządzeń i podzieliłem podstawowe ustawienia na osobną kartę.",
+        "uk": "Замінив список принтерів конфігурацією Диспетчера пристроїв і розділив основні налаштування на окрему вкладку.",
+        "zh-cn": "将打印机列表替换为设备管理器配置，并将基本设置拆分为一个单独的选项卡。"
+      },
       "0.0.2": {
         "en": "Added Node.js 22 support and documented printer supply and counter attributes.",
         "de": "Support für Node.js 22 hinzugefügt und Druckerbedarf und Zähler dokumentiert.",
