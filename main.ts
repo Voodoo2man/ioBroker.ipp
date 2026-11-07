@@ -13,6 +13,7 @@ import {
     parsePrinterConfig,
     type PrinterConfig,
 } from './lib/printerConfig';
+import { SerialQueue } from './lib/serialQueue';
 import { isPrinterUnavailableError, pollPrinter } from './lib/printerIpp';
 import { markOffline, publishSnapshot } from './lib/printerState';
 
@@ -34,7 +35,7 @@ function getPrinterFormSchema(idReadOnly = false): JsonFormSchema {
                 label: 'ID',
                 readOnly: idReadOnly,
                 validator:
-                    "!!data.id && /^[A-Za-z0-9_-]{1,32}$/.test(data.id.replace(/Ä/g, 'Ae').replace(/Ö/g, 'Oe').replace(/Ü/g, 'Ue').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss'))",
+                    "!!data.id && data.id.toLowerCase() !== 'info' && /^[A-Za-z0-9_-]{1,32}$/.test(data.id.replace(/Ä/g, 'Ae').replace(/Ö/g, 'Oe').replace(/Ü/g, 'Ue').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss'))",
             },
             label: { type: 'text', label: 'Label' },
             host: { type: 'text', label: 'Host', validator: '!!data.host' },
@@ -54,10 +55,13 @@ function boundedNumber(value: unknown, fallback: number, min: number, max: numbe
 class Ipp extends Adapter {
     private readonly deviceManagement: IppDeviceManagement;
     private pollTimer: ioBroker.Interval | null = null;
-    private polling = false;
+    private activePoll: Promise<void> | null = null;
     private unloading = false;
     private printers: PrinterConfig[] = [];
     private configuredPrinterSettings: unknown[] = [];
+    private readonly configUpdates = new SerialQueue();
+    private readonly activeRequests = new Set<AbortController>();
+    private configRevision = 0;
     private timeoutMs = DEFAULT_TIMEOUT_MS;
 
     constructor(options: Partial<AdapterOptions> = {}) {
@@ -147,25 +151,31 @@ class Ipp extends Adapter {
     }
 
     public async savePrinter(printer: unknown, previousId?: string): Promise<void> {
-        const parsed = parsePrinterConfig(printer, previousId);
-        if (!parsed.config) {
-            throw new Error(parsed.errors.join('; '));
-        }
-        const printers = this.configuredPrinterSettings.filter(config => {
-            const configured = parsePrinterConfig(config).config;
-            return !configured || configured.id !== previousId;
+        return this.configUpdates.run(async () => {
+            const parsed = parsePrinterConfig(printer, previousId);
+            if (!parsed.config) {
+                throw new Error(parsed.errors.join('; '));
+            }
+            const printers = this.configuredPrinterSettings.filter(config => {
+                const configured = parsePrinterConfig(config).config;
+                return !configured || configured.id !== previousId;
+            });
+            if (
+                this.getConfiguredPrinters().some(config => config.id !== previousId && config.id === parsed.config!.id)
+            ) {
+                throw new Error('A printer with this ID is already configured');
+            }
+            printers.push(parsed.config);
+            await this.savePrinterList(printers);
         });
-        if (this.getConfiguredPrinters().some(config => config.id !== previousId && config.id === parsed.config!.id)) {
-            throw new Error('A printer with this ID is already configured');
-        }
-        printers.push(parsed.config);
-        await this.savePrinterList(printers);
     }
 
     public async removePrinter(id: string): Promise<void> {
-        await this.savePrinterList(
-            this.configuredPrinterSettings.filter(config => parsePrinterConfig(config).config?.id !== id),
-        );
+        return this.configUpdates.run(async () => {
+            await this.savePrinterList(
+                this.configuredPrinterSettings.filter(config => parsePrinterConfig(config).config?.id !== id),
+            );
+        });
     }
 
     public getPrinter(id: string): PrinterConfig | undefined {
@@ -174,7 +184,17 @@ class Ipp extends Adapter {
 
     private async savePrinterList(printers: unknown[]): Promise<void> {
         const previousIds = new Set(this.printers.map(printer => printer.id));
-        await this.extendForeignObjectAsync(`system.adapter.${this.namespace}`, { native: { printers } });
+        this.configRevision++;
+        for (const controller of this.activeRequests) {
+            controller.abort();
+        }
+        await this.activePoll;
+        try {
+            await this.updateConfig({ printers });
+        } catch (error) {
+            this.configRevision++;
+            throw error;
+        }
         this.configuredPrinterSettings = printers;
         const printerIds = new Set<string>();
         this.printers = printers.flatMap(printer => {
@@ -197,24 +217,32 @@ class Ipp extends Adapter {
         await this.pollPrinters();
     }
 
-    private async pollPrinters(): Promise<void> {
-        if (this.polling || this.unloading) {
-            return;
+    private pollPrinters(): Promise<void> {
+        if (this.unloading) {
+            return Promise.resolve();
         }
-        this.polling = true;
-        try {
-            for (const printer of this.printers) {
-                if (this.unloading) {
-                    break;
-                }
-                await this.pollOnePrinter(printer);
+        if (this.activePoll) {
+            return this.activePoll;
+        }
+        const poll = this.runPrinterPolls(this.configRevision);
+        this.activePoll = poll.finally(() => {
+            this.activePoll = null;
+        });
+        return this.activePoll;
+    }
+
+    private async runPrinterPolls(revision: number): Promise<void> {
+        for (const printer of this.printers) {
+            if (this.unloading || revision !== this.configRevision) {
+                break;
             }
-        } finally {
-            this.polling = false;
+            await this.pollOnePrinter(printer, revision);
         }
     }
 
-    private async pollOnePrinter(printer: PrinterConfig): Promise<void> {
+    private async pollOnePrinter(printer: PrinterConfig, revision: number): Promise<void> {
+        const controller = new AbortController();
+        this.activeRequests.add(controller);
         try {
             const result = await pollPrinter({
                 host: printer.host.trim(),
@@ -223,12 +251,13 @@ class Ipp extends Adapter {
                 ssl: printer.ssl === true,
                 verifySsl: printer.verifySsl === true,
                 timeoutMs: this.timeoutMs,
+                signal: controller.signal,
             });
-            if (!this.unloading) {
+            if (this.isCurrentPoll(printer, revision)) {
                 await publishSnapshot(this, printer, result);
             }
         } catch (error) {
-            if (!this.unloading) {
+            if (this.isCurrentPoll(printer, revision)) {
                 try {
                     await markOffline(this, printer);
                 } catch {
@@ -242,11 +271,22 @@ class Ipp extends Adapter {
                     this.log.warn(logMessage);
                 }
             }
+        } finally {
+            this.activeRequests.delete(controller);
         }
+    }
+
+    private isCurrentPoll(printer: PrinterConfig, revision: number): boolean {
+        return (
+            !this.unloading && revision === this.configRevision && this.printers.some(item => item.id === printer.id)
+        );
     }
 
     private onUnload(callback: () => void): void {
         this.unloading = true;
+        for (const controller of this.activeRequests) {
+            controller.abort();
+        }
         if (this.pollTimer) {
             try {
                 this.clearInterval(this.pollTimer);
@@ -276,8 +316,18 @@ class IppDeviceManagement extends DeviceManagement<Ipp, string> {
                         if (!data) {
                             return { refresh: false };
                         }
-                        await this.adapter.savePrinter(data);
-                        return { refresh: true };
+                        try {
+                            await this.adapter.savePrinter(data);
+                            return { refresh: true };
+                        } catch (error) {
+                            await this.showActionError(
+                                context,
+                                'Could not add the printer',
+                                'Drucker konnte nicht hinzugefügt werden',
+                                error,
+                            );
+                            return { refresh: false };
+                        }
                     },
                 },
             ],
@@ -321,8 +371,18 @@ class IppDeviceManagement extends DeviceManagement<Ipp, string> {
                                     de: 'Diesen Drucker entfernen?',
                                 })
                             ) {
-                                await this.adapter.removePrinter(deviceId);
-                                return { refresh: 'devices' };
+                                try {
+                                    await this.adapter.removePrinter(deviceId);
+                                    return { refresh: 'devices' };
+                                } catch (error) {
+                                    await this.showActionError(
+                                        actionContext,
+                                        'Could not remove the printer',
+                                        'Drucker konnte nicht entfernt werden',
+                                        error,
+                                    );
+                                    return { refresh: 'none' };
+                                }
                             }
                             return { refresh: 'none' };
                         },
@@ -363,8 +423,23 @@ class IppDeviceManagement extends DeviceManagement<Ipp, string> {
         if (!data) {
             return { refresh: 'none' };
         }
-        await this.adapter.savePrinter(data, id);
-        return { refresh: 'devices' };
+        try {
+            await this.adapter.savePrinter(data, id);
+            return { refresh: 'devices' };
+        } catch (error) {
+            await this.showActionError(
+                context,
+                'Could not save the printer',
+                'Drucker konnte nicht gespeichert werden',
+                error,
+            );
+            return { refresh: 'none' };
+        }
+    }
+
+    private async showActionError(context: ActionContext, en: string, de: string, error: unknown): Promise<void> {
+        const detail = error instanceof Error ? error.message : String(error);
+        await context.showMessage({ en: `${en}: ${detail}`, de: `${de}: ${detail}` });
     }
 }
 

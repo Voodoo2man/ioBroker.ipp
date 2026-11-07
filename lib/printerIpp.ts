@@ -1,5 +1,7 @@
 import http from 'node:http';
 import https from 'node:https';
+import { join } from 'node:path';
+import { Worker } from 'node:worker_threads';
 import * as ipp from '@sealsystems/ipp';
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -179,6 +181,7 @@ export interface PrinterEndpoint {
     ssl?: boolean;
     verifySsl?: boolean;
     timeoutMs?: number;
+    signal?: AbortSignal;
 }
 
 export interface PrinterSupply {
@@ -187,6 +190,7 @@ export interface PrinterSupply {
     maxLevel: number;
     unit: number;
     markerType: unknown;
+    sourceIndex?: number;
 }
 
 export interface PrinterSnapshot {
@@ -286,34 +290,20 @@ export function normalizeSnapshot(response: ipp.IppResponse): PrinterSnapshot {
     );
     const markerNames = asArray(attributes['marker-names']);
     const markerLevels = asArray(attributes['marker-levels']);
-    const markerHighLevels = asArray(attributes['marker-high-levels']);
-    const markerLowLevels = asArray(attributes['marker-low-levels']);
     const markerTypes = asArray(attributes['marker-types']);
     const supplies = markerNames.flatMap((name, index): PrinterSupply[] => {
         const level = finiteNumber(markerLevels[index]);
-        const highLevel = finiteNumber(markerHighLevels[index]);
-        const lowLevel = finiteNumber(markerLowLevels[index]);
-        if (
-            typeof name !== 'string' ||
-            name.trim() === '' ||
-            level === null ||
-            highLevel === null ||
-            lowLevel === null ||
-            highLevel <= lowLevel
-        ) {
-            return [];
-        }
-        const percent = Math.round(((level - lowLevel) / (highLevel - lowLevel)) * 100 * 100) / 100;
-        if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+        if (typeof name !== 'string' || name.trim() === '' || level === null || level < 0 || level > 100) {
             return [];
         }
         return [
             {
                 description: name.trim(),
-                level: percent,
+                level,
                 maxLevel: 100,
                 unit: 14,
                 markerType: markerTypes[index] ?? null,
+                sourceIndex: index,
             },
         ];
     });
@@ -365,10 +355,55 @@ function makeRequest(uri: string): Buffer {
     });
 }
 
-function sendRequest(url: URL, uri: string, timeoutMs: number, verifySsl: boolean): Promise<ipp.IppResponse> {
+function sendRequest(
+    url: URL,
+    uri: string,
+    timeoutMs: number,
+    verifySsl: boolean,
+    signal?: AbortSignal,
+): Promise<ipp.IppResponse> {
     return new Promise((resolve, reject) => {
         const transport = url.protocol === 'https:' ? https : http;
         const requestBody = makeRequest(uri);
+        const agent = url.protocol === 'https:' ? new https.Agent({ rejectUnauthorized: verifySsl }) : undefined;
+        let response: http.IncomingMessage | undefined;
+        let parserWorker: Worker | undefined;
+        let settled = false;
+        const controls: {
+            request?: http.ClientRequest;
+            deadline?: NodeJS.Timeout;
+            onAbort?: () => void;
+        } = {};
+        const finish = (error?: Error, parsed?: ipp.IppResponse): void => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            clearTimeout(controls.deadline);
+            if (controls.onAbort) {
+                signal?.removeEventListener('abort', controls.onAbort);
+            }
+            agent?.destroy();
+            if (error) {
+                response?.destroy();
+                void parserWorker?.terminate();
+                reject(error);
+            } else {
+                void parserWorker?.terminate();
+                resolve(parsed!);
+            }
+        };
+        const timeoutError = (): NodeJS.ErrnoException => {
+            const error = new Error('Printer request timed out') as NodeJS.ErrnoException;
+            error.code = 'ETIMEDOUT';
+            return error;
+        };
+        const onAbort = (): void => {
+            const error = new Error('Printer request was aborted') as NodeJS.ErrnoException;
+            error.code = 'ABORT_ERR';
+            controls.request?.destroy(error);
+            finish(error);
+        };
         const request = transport.request(
             url,
             {
@@ -378,51 +413,81 @@ function sendRequest(url: URL, uri: string, timeoutMs: number, verifySsl: boolea
                     accept: 'application/ipp',
                     'content-length': requestBody.length,
                 },
-                agent: url.protocol === 'https:' ? new https.Agent({ rejectUnauthorized: verifySsl }) : undefined,
+                agent,
             },
-            response => {
+            incomingResponse => {
+                response = incomingResponse;
                 const chunks: Buffer[] = [];
                 let size = 0;
                 response.on('data', (chunk: Buffer) => {
                     size += chunk.length;
                     if (size > MAX_RESPONSE_BYTES) {
-                        request.destroy(new Error('IPP response exceeded the size limit'));
+                        const error = new Error('IPP response exceeded the size limit');
+                        response?.destroy(error);
+                        request.destroy(error);
+                        finish(error);
                         return;
                     }
                     chunks.push(chunk);
                 });
+                response.once('aborted', () => finish(new Error('Printer sent an incomplete IPP response')));
+                response.once('error', () => finish(new Error('Printer sent an incomplete IPP response')));
                 response.on('end', () => {
-                    const statusCode = response.statusCode ?? 0;
+                    const statusCode = incomingResponse.statusCode ?? 0;
                     if (statusCode < 200 || statusCode >= 300) {
-                        reject(new Error(`IPP endpoint returned HTTP ${statusCode}`));
+                        finish(new Error(`IPP endpoint returned HTTP ${statusCode}`));
                         return;
                     }
-                    try {
-                        const parsed = ipp.parse(Buffer.concat(chunks));
-                        if (!parsed.statusCode || !String(parsed.statusCode).startsWith('successful-')) {
-                            reject(new Error('Printer returned an unsuccessful IPP response'));
-                            return;
+                    parserWorker = new Worker(join(__dirname, 'ippParserWorker.js'), {
+                        workerData: Buffer.concat(chunks),
+                    });
+                    parserWorker.once('message', (result: { response?: ipp.IppResponse; error?: string }) => {
+                        if (!result.response) {
+                            finish(new Error('Printer returned an invalid IPP response'));
+                        } else if (
+                            !result.response.statusCode ||
+                            !String(result.response.statusCode).startsWith('successful-')
+                        ) {
+                            finish(new Error('Printer returned an unsuccessful IPP response'));
+                        } else {
+                            finish(undefined, result.response);
                         }
-                        resolve(parsed);
-                    } catch {
-                        reject(new Error('Printer returned an invalid IPP response'));
-                    }
+                    });
+                    parserWorker.once('error', () => finish(new Error('Printer returned an invalid IPP response')));
+                    parserWorker.once('exit', code => {
+                        if (code !== 0) {
+                            finish(new Error('Printer returned an invalid IPP response'));
+                        }
+                    });
                 });
             },
         );
-        request.setTimeout(timeoutMs, () => {
-            const error = new Error('IPP request timed out') as NodeJS.ErrnoException;
-            error.code = 'ETIMEDOUT';
+        controls.request = request;
+        const deadline = setTimeout(() => {
+            const error = timeoutError();
             request.destroy(error);
-        });
+            finish(error);
+        }, timeoutMs);
+        controls.deadline = deadline;
+        controls.onAbort = onAbort;
+        request.setTimeout(timeoutMs, () => request.destroy(timeoutError()));
         request.on('error', (error: NodeJS.ErrnoException) => {
             const wrappedError = new Error(
-                error.code === 'ETIMEDOUT' ? 'Printer request timed out' : 'Printer IPP request failed',
+                error.code === 'ETIMEDOUT'
+                    ? 'Printer request timed out'
+                    : error.code === 'ABORT_ERR'
+                      ? 'Printer request was aborted'
+                      : 'Printer IPP request failed',
             );
             wrappedError.name = error.name;
             (wrappedError as NodeJS.ErrnoException).code = error.code;
-            reject(wrappedError);
+            finish(wrappedError);
         });
+        if (signal?.aborted) {
+            onAbort();
+            return;
+        }
+        signal?.addEventListener('abort', onAbort, { once: true });
         request.end(requestBody);
     });
 }
@@ -434,6 +499,7 @@ export async function pollPrinter({
     ssl = false,
     verifySsl = false,
     timeoutMs = 5000,
+    signal,
 }: PrinterEndpoint): Promise<PrinterSnapshot> {
     const numericPort = Number(port);
     if (!validHost(host)) {
@@ -450,5 +516,5 @@ export async function pollPrinter({
     }
     const endpoint = new URL(`${ssl ? 'https:' : 'http:'}//${host.trim()}:${numericPort}${basePath}`);
     const uri = `${ssl ? 'ipps:' : 'ipp:'}//${endpoint.host}${endpoint.pathname}`;
-    return normalizeSnapshot(await sendRequest(endpoint, uri, timeoutMs, verifySsl));
+    return normalizeSnapshot(await sendRequest(endpoint, uri, timeoutMs, verifySsl, signal));
 }

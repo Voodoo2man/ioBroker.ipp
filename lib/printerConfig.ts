@@ -61,7 +61,7 @@ export function parsePrinterConfig(value: unknown, previousId?: string): Printer
             id,
             label: typeof printer.label === 'string' ? printer.label : undefined,
             host: printer.host as string,
-            port: printer.port as number | string | undefined,
+            port: printer.port === '' ? 631 : ((printer.port as number | undefined) ?? 631),
             basePath: printer.basePath as string | undefined,
             ssl,
             verifySsl,
@@ -92,6 +92,8 @@ export function getPrinterConfigErrors(value: unknown): string[] {
 
     if (typeof printer.id !== 'string' || !/^[A-Za-z0-9_-]{1,32}$/.test(normalizePrinterId(printer.id))) {
         errors.push('id must contain 1-32 letters, digits, underscores, or hyphens');
+    } else if (normalizePrinterId(printer.id).toLowerCase() === 'info') {
+        errors.push('id is reserved by the adapter');
     }
     if (typeof printer.host !== 'string' || printer.host.trim() === '') {
         errors.push('host is missing or is not text');

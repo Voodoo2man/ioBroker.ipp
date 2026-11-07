@@ -53,6 +53,12 @@ describe('printerConfig', () => {
         expect(parsed.errors).to.deep.equal(['id cannot be changed after creation']);
     });
 
+    it('rejects the reserved info ID', () => {
+        expect(parsePrinterConfig({ id: 'info', host: 'printer.local' }).errors).to.deep.equal([
+            'id is reserved by the adapter',
+        ]);
+    });
+
     it('explains invalid fields without exposing configured values', () => {
         const printer = { id: 'bad.id', host: '', port: 'ipp', basePath: 'ipp/print', ssl: 'maybe' };
 
@@ -75,5 +81,10 @@ describe('printerConfig', () => {
             ssl: true,
             verifySsl: true,
         });
+    });
+
+    it('defaults an empty or omitted port to the IPP default', () => {
+        expect(parsePrinterConfig({ id: 'Buero', host: 'printer.local', port: '' }).config?.port).to.equal(631);
+        expect(parsePrinterConfig({ id: 'Buero', host: 'printer.local' }).config?.port).to.equal(631);
     });
 });

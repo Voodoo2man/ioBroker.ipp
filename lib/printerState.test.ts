@@ -1,20 +1,20 @@
 import { expect } from 'chai';
 import { markOffline, publishSnapshot } from './printerState';
 
-function makeAdapter(): {
+function makeAdapter(storage = { states: new Map<string, unknown>(), objects: new Map<string, unknown>() }): {
     states: Map<string, unknown>;
     objects: Map<string, unknown>;
     setObjectNotExistsAsync: (id: string, object: unknown) => Promise<void>;
     extendObjectAsync: (id: string, object: unknown) => Promise<void>;
     setStateAsync: (id: string, state: unknown) => Promise<void>;
+    getStatesOfAsync: (parentDevice: string, parentChannel?: string) => Promise<ioBroker.StateObject[]>;
 } {
-    const states = new Map<string, unknown>();
-    const objects = new Map<string, unknown>();
+    const { states, objects } = storage;
     return {
         states,
         objects,
         setObjectNotExistsAsync: (id: string, object: unknown) =>
-            Promise.resolve(objects.set(id, object)).then(() => undefined),
+            Promise.resolve(objects.has(id) ? undefined : objects.set(id, object)).then(() => undefined),
         extendObjectAsync: (id: string, object: unknown) => {
             const existing = objects.get(id) as { common?: { states?: Record<number, string> } } | undefined;
             const extension = object as { common: { states: Record<number, string> } };
@@ -25,6 +25,12 @@ function makeAdapter(): {
             return Promise.resolve();
         },
         setStateAsync: (id: string, state: unknown) => Promise.resolve(states.set(id, state)).then(() => undefined),
+        getStatesOfAsync: (parentDevice: string, parentChannel?: string) =>
+            Promise.resolve(
+                [...objects.keys()]
+                    .filter(id => id.startsWith(`${parentDevice}.${parentChannel ?? ''}.`))
+                    .map(_id => ({ _id, type: 'state', common: {}, native: {} }) as ioBroker.StateObject),
+            ),
     };
 }
 
@@ -82,6 +88,25 @@ describe('printerState', () => {
         expect(adapter.states.get('office.counters.pages_completed')).to.deep.equal({ val: null, ack: true });
         expect(adapter.states.get('office.supplies.0_black_toner')).to.deep.equal({ val: 70, ack: true });
         expect(adapter.states.get('office.details.printer_location')).to.deep.equal({ val: null, ack: true });
+    });
+
+    it('clears missing counters and details after a restart using stored state objects', async () => {
+        const firstRun = makeAdapter();
+        await publishSnapshot(
+            firstRun,
+            { id: 'office' },
+            {
+                online: true,
+                counters: { pagesCompleted: 10 },
+                details: [{ id: 'printer_location', name: 'Printer location', value: 'Office' }],
+            },
+        );
+
+        const restarted = makeAdapter({ states: firstRun.states, objects: firstRun.objects });
+        await publishSnapshot(restarted, { id: 'office' }, { online: true, counters: {}, details: [] });
+
+        expect(firstRun.states.get('office.counters.pages_completed')).to.deep.equal({ val: null, ack: true });
+        expect(firstRun.states.get('office.details.printer_location')).to.deep.equal({ val: null, ack: true });
     });
 
     it('keeps the last known readings when the printer goes offline', async () => {

@@ -49,6 +49,8 @@
     "build/main.js",
     "build/lib/printerConfig.js",
     "build/lib/printerIpp.js",
+    "build/lib/ippParserWorker.js",
+    "build/lib/serialQueue.js",
     "build/lib/printerState.js",
     "www/",
     "io-package.json",
