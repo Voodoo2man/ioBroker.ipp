@@ -43,6 +43,19 @@ function makeAdapter(storage = { states: new Map<string, unknown>(), objects: ne
 }
 
 describe('printerState', () => {
+    it('creates the online state object before marking an uninitialized printer offline', async () => {
+        const adapter = makeAdapter();
+
+        await markOffline(adapter, { id: 'office' });
+
+        expect(adapter.objects.get('office.status.online')).to.deep.equal({
+            type: 'state',
+            common: { name: 'Online', type: 'boolean', role: 'indicator', read: true, write: false },
+            native: {},
+        });
+        expect(adapter.states.get('office.status.online')).to.deep.equal({ val: false, ack: true });
+    });
+
     it('publishes status and supply values as acknowledged states', async () => {
         const adapter = makeAdapter();
         await publishSnapshot(

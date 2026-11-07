@@ -98,7 +98,12 @@ export async function publishSnapshot(adapter: StateAdapter, printer: PrinterCon
         await markOffline(adapter, printer);
         return;
     }
-    await adapter.setStateAsync(`${printer.id}.status.online`, { val: true, ack: true });
+    await writeState(
+        adapter,
+        `${printer.id}.status.online`,
+        { name: 'Online', type: 'boolean', role: 'indicator', read: true, write: false },
+        true,
+    );
 
     const statusValues: Array<{
         id: string;
@@ -224,7 +229,12 @@ export async function publishSnapshot(adapter: StateAdapter, printer: PrinterCon
 }
 
 export async function markOffline(adapter: StateAdapter, printer: PrinterConfig): Promise<void> {
-    await adapter.setStateAsync(`${printer.id}.status.online`, { val: false, ack: true });
+    await writeState(
+        adapter,
+        `${printer.id}.status.online`,
+        { name: 'Online', type: 'boolean', role: 'indicator', read: true, write: false },
+        false,
+    );
     const stateId = `${printer.id}.status.state`;
     const stateLabels = { 0: 'off', 3: 'idle', 4: 'printing', 5: 'stopped' };
     await writeState(
