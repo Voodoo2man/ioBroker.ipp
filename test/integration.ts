@@ -10,8 +10,28 @@ tests.integration(path.resolve(__dirname, '../..'), {
             it('migrates and polls a printer with the existing info ID', async function (this: Context) {
                 this.timeout(30000);
                 const harness = getHarness();
+                const storageId = 'ipp.0.info.printerConfig';
+                if (await harness.objects.fileExists(storageId, 'printers.json')) {
+                    await harness.objects.unlinkAsync(storageId, 'printers.json');
+                }
+                await harness.objects.setObjectAsync('ipp.0.printer', {
+                    type: 'device',
+                    common: { name: 'Stale duplicate printer' },
+                    native: {},
+                });
+                await harness.objects.setObjectAsync('ipp.0.printer.status', {
+                    type: 'channel',
+                    common: { name: 'Stale duplicate status' },
+                    native: {},
+                });
                 await harness.changeAdapterConfig('ipp', {
-                    native: { printers: [{ id: 'info', host: '127.0.0.1', port: 1 }] },
+                    native: {
+                        printers: [
+                            { id: 'info', host: '127.0.0.1', port: 1 },
+                            { id: 'Printer', host: '127.0.0.1', port: 1 },
+                            { id: 'printer', host: '127.0.0.1', port: 1 },
+                        ],
+                    },
                 });
 
                 const printerOffline = new Promise<void>((resolve, reject) => {
@@ -25,6 +45,8 @@ tests.integration(path.resolve(__dirname, '../..'), {
                 });
                 await harness.startAdapterAndWait();
                 await printerOffline;
+                expect(await harness.objects.getObject('ipp.0.printer')).to.not.exist;
+                expect(await harness.objects.getObject('ipp.0.printer.status')).to.not.exist;
 
                 const storage = await harness.objects.getObject('ipp.0.info.printerConfig');
                 expect(storage?.type).to.equal('meta');
@@ -44,7 +66,10 @@ tests.integration(path.resolve(__dirname, '../..'), {
                         },
                     );
                 });
-                expect(JSON.parse(storedConfig.toString())).to.deep.equal([{ id: 'info', host: '127.0.0.1', port: 1 }]);
+                expect(JSON.parse(storedConfig.toString())).to.deep.equal([
+                    { id: 'info', host: '127.0.0.1', port: 1 },
+                    { id: 'Printer', host: '127.0.0.1', port: 1 },
+                ]);
             });
         });
     },

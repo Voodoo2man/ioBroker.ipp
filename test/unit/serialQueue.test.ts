@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { SerialQueue } from './serialQueue';
+import { SerialQueue } from '../../src/lib/serialQueue';
 
 describe('SerialQueue', () => {
     it('runs overlapping operations in order and recovers after a rejection', async () => {

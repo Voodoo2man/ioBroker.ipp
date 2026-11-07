@@ -8,6 +8,8 @@ interface PrinterConfig {
 interface StateAdapter {
     namespace: string;
     setObjectNotExistsAsync(id: string, object: ioBroker.SettableObject): Promise<unknown>;
+    getObjectAsync(id: string): Promise<ioBroker.Object | null | undefined>;
+    setObjectAsync(id: string, object: ioBroker.SettableObject): Promise<unknown>;
     extendObjectAsync(id: string, object: { common: { states: Record<number, string> } }): Promise<unknown>;
     setStateAsync(id: string, state: ioBroker.SettableState): Promise<unknown>;
     getStatesOfAsync(parentDevice: string, parentChannel?: string): Promise<ioBroker.StateObject[]>;
@@ -22,6 +24,8 @@ type Snapshot = Omit<Partial<PrinterSnapshot>, 'counters'> & {
 function stateObject(common: ioBroker.StateCommon): ioBroker.SettableObject {
     return { type: 'state', common, native: {} };
 }
+
+const managedCommonKeys = ['name', 'type', 'role', 'read', 'write', 'min', 'max', 'unit', 'states'] as const;
 
 function fullStateId(adapter: StateAdapter, id: string): string {
     const prefix = `${adapter.namespace}.`;
@@ -39,7 +43,31 @@ async function writeState(
     common: ioBroker.StateCommon,
     value: unknown,
 ): Promise<void> {
-    await adapter.setObjectNotExistsAsync(id, stateObject(common));
+    const existing = await adapter.getObjectAsync(id);
+    if (!existing) {
+        await adapter.setObjectNotExistsAsync(id, stateObject(common));
+    } else {
+        const existingCommon = existing.common as ioBroker.StateCommon;
+        const metadataChanged =
+            existing.type !== 'state' ||
+            managedCommonKeys.some(key => JSON.stringify(existingCommon[key]) !== JSON.stringify(common[key]));
+        if (metadataChanged) {
+            const updatedCommon: Record<string, unknown> = { ...existingCommon };
+            for (const key of managedCommonKeys) {
+                if (common[key] === undefined) {
+                    delete updatedCommon[key];
+                } else {
+                    updatedCommon[key] = common[key];
+                }
+            }
+            await adapter.setObjectAsync(id, {
+                type: 'state',
+                common: updatedCommon as unknown as ioBroker.StateCommon,
+                native: existing.native ?? {},
+                acl: existing.type === 'state' ? existing.acl : undefined,
+            });
+        }
+    }
     await adapter.setStateAsync(id, { val: value as ioBroker.StateValue, ack: true });
 }
 

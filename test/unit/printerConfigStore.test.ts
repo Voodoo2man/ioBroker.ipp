@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { loadPrinterConfigurations, savePrinterConfigurations } from './printerConfigStore';
+import { loadPrinterConfigurations, savePrinterConfigurations } from '../../src/lib/printerConfigStore';
 
 function makeAdapter(): {
     namespace: string;

@@ -1,11 +1,13 @@
 import { expect } from 'chai';
-import { markOffline, publishSnapshot } from './printerState';
+import { markOffline, publishSnapshot } from '../../src/lib/printerState';
 
 function makeAdapter(storage = { states: new Map<string, unknown>(), objects: new Map<string, unknown>() }): {
     states: Map<string, unknown>;
     objects: Map<string, unknown>;
     namespace: string;
     setObjectNotExistsAsync: (id: string, object: unknown) => Promise<void>;
+    getObjectAsync: (id: string) => Promise<ioBroker.Object | null | undefined>;
+    setObjectAsync: (id: string, object: unknown) => Promise<void>;
     extendObjectAsync: (id: string, object: unknown) => Promise<void>;
     setStateAsync: (id: string, state: unknown) => Promise<void>;
     getStatesOfAsync: (parentDevice: string, parentChannel?: string) => Promise<ioBroker.StateObject[]>;
@@ -17,6 +19,8 @@ function makeAdapter(storage = { states: new Map<string, unknown>(), objects: ne
         namespace: 'ipp.0',
         setObjectNotExistsAsync: (id: string, object: unknown) =>
             Promise.resolve(objects.has(id) ? undefined : objects.set(id, object)).then(() => undefined),
+        getObjectAsync: id => Promise.resolve((objects.get(id) as ioBroker.Object | undefined) ?? null),
+        setObjectAsync: (id, object) => Promise.resolve(objects.set(id, object)).then(() => undefined),
         extendObjectAsync: (id: string, object: unknown) => {
             const existing = objects.get(id) as { common?: { states?: Record<number, string> } } | undefined;
             const extension = object as { common: { states: Record<number, string> } };
@@ -111,6 +115,41 @@ describe('printerState', () => {
 
         expect(firstRun.states.get('office.counters.pages_completed')).to.deep.equal({ val: null, ack: true });
         expect(firstRun.states.get('office.details.printer_location')).to.deep.equal({ val: null, ack: true });
+    });
+
+    it('updates detail metadata when a printer changes an attribute type', async () => {
+        const adapter = makeAdapter();
+        const printer = { id: 'office' };
+        await publishSnapshot(adapter, printer, {
+            online: true,
+            details: [{ id: 'queued_job_count', name: 'Queued jobs', value: 3 }],
+        });
+        const acl: ioBroker.StateACL = {
+            owner: 'system.user.admin',
+            ownerGroup: 'system.group.administrator',
+            object: 0o660,
+            state: 0o660,
+        };
+        const existingObject = adapter.objects.get('office.details.queued_job_count') as ioBroker.StateObject;
+        adapter.objects.set('office.details.queued_job_count', { ...existingObject, acl });
+
+        await publishSnapshot(adapter, printer, {
+            online: true,
+            details: [{ id: 'queued_job_count', name: 'Queued jobs', value: 'unavailable' }],
+        });
+
+        expect(adapter.objects.get('office.details.queued_job_count')).to.include({
+            type: 'state',
+        });
+        expect((adapter.objects.get('office.details.queued_job_count') as ioBroker.StateObject).common).to.include({
+            type: 'string',
+            role: 'text',
+        });
+        expect(
+            (adapter.objects.get('office.details.queued_job_count') as ioBroker.StateObject).common,
+        ).to.not.have.property('unit');
+        expect((adapter.objects.get('office.details.queued_job_count') as ioBroker.StateObject).acl).to.deep.equal(acl);
+        expect(adapter.states.get('office.details.queued_job_count')).to.deep.equal({ val: 'unavailable', ack: true });
     });
 
     it('keeps the last known readings when the printer goes offline', async () => {

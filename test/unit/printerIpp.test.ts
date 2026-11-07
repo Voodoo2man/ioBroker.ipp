@@ -2,7 +2,7 @@ import http from 'node:http';
 import { spawnSync } from 'node:child_process';
 import { expect } from 'chai';
 import * as ipp from '@sealsystems/ipp';
-import { isPrinterUnavailableError, normalizeSnapshot, pollPrinter } from './printerIpp';
+import { isPrinterUnavailableError, normalizeSnapshot, pollPrinter } from '../../src/lib/printerIpp';
 
 function ippResponse(attributes: Record<string, unknown>): Buffer {
     return ipp.serialize({ version: '2.0', statusCode: 'successful-ok', id: 1, 'printer-attributes-tag': attributes });

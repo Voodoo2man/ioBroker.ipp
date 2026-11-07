@@ -4,7 +4,7 @@ import {
     getPrinterConfigErrors,
     getUniquePrinterConfigs,
     parsePrinterConfig,
-} from './printerConfig';
+} from '../../src/lib/printerConfig';
 
 describe('printerConfig', () => {
     it('accepts the values shown in the reported Admin configuration', () => {
@@ -35,15 +35,18 @@ describe('printerConfig', () => {
         expect(uppercase.config?.id).to.equal('AeOeUe-ss');
     });
 
-    it('keeps only the first printer when configured IDs duplicate after normalization', () => {
+    it('keeps only the first printer when configured IDs collide after normalization or case folding', () => {
         const printers = getUniquePrinterConfigs([
             { id: 'Buero', host: 'first.local' },
             { id: 'Büro', host: 'duplicate.local' },
+            { id: 'Printer', host: 'uppercase.local' },
+            { id: 'printer', host: 'lowercase.local' },
             { id: 'Other', host: 'other.local' },
         ]);
 
-        expect(printers.map(printer => printer.id)).to.deep.equal(['Buero', 'Other']);
+        expect(printers.map(printer => printer.id)).to.deep.equal(['Buero', 'Printer', 'Other']);
         expect(printers[0].host).to.equal('first.local');
+        expect(printers[1].host).to.equal('uppercase.local');
     });
 
     it('rejects changing a printer ID while editing', () => {
@@ -51,6 +54,7 @@ describe('printerConfig', () => {
 
         expect(parsed.config).to.equal(undefined);
         expect(parsed.errors).to.deep.equal(['id cannot be changed after creation']);
+        expect(parsePrinterConfig({ id: 'PRINTER', host: 'printer.local' }, 'Printer').config?.id).to.equal('Printer');
     });
 
     it('rejects the reserved info ID', () => {
@@ -59,7 +63,7 @@ describe('printerConfig', () => {
         ]);
     });
 
-    it('keeps existing printers with the legacy info ID loadable', () => {
+    it('keeps existing printers with case-insensitive legacy info IDs loadable', () => {
         const config = { id: 'info', host: 'printer.local' };
 
         expect(parsePrinterConfig(config, undefined, { allowLegacyInfoId: true }).config?.id).to.equal('info');
@@ -67,6 +71,12 @@ describe('printerConfig', () => {
             ['info'],
         );
         expect(parsePrinterConfig(config, 'info', { allowLegacyInfoId: true }).config?.id).to.equal('info');
+        for (const id of ['INFO', 'Info']) {
+            expect(parsePrinterConfig({ ...config, id }, undefined, { allowLegacyInfoId: true }).config?.id).to.equal(
+                id,
+            );
+            expect(parsePrinterConfig({ ...config, id }).errors).to.deep.equal(['id is reserved by the adapter']);
+        }
     });
 
     it('explains invalid fields without exposing configured values', () => {

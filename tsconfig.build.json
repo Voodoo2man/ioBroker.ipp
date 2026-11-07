@@ -3,9 +3,9 @@
     "compilerOptions": {
         "noEmit": false,
         "outDir": "build",
-        "rootDir": ".",
+        "rootDir": "src",
         "declaration": true
     },
-    "include": ["main.ts", "lib/printerIpp.ts", "lib/ippParserWorker.ts", "lib/printerState.ts", "lib/adapter-config.d.ts", "lib/ipp.d.ts"],
+    "include": ["src/main.ts", "src/lib/ippParserWorker.ts", "src/lib/adapter-config.d.ts", "src/lib/ipp.d.ts"],
     "exclude": ["node_modules/**", "build/**"]
 }

@@ -61,7 +61,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepack": "npm run build",
-    "test:js": "npm run compile:test && mocha --exit \".test-build/lib/**/*.test.js\"",
+    "test:js": "npm run compile:test && mocha --exit \".test-build/test/unit/**/*.test.js\"",
     "test:package": "npm run build && npm run compile:test && mocha .test-build/test/package.js --exit",
     "test:integration": "npm run build && npm run compile:test && mocha .test-build/test/integration.js --exit",
     "compile:test": "tsc -p tsconfig.test.json",

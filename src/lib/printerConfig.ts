@@ -35,6 +35,10 @@ function normalizePrinterId(value: string): string {
         .replace(/ß/g, 'ss');
 }
 
+export function getPrinterIdKey(value: string): string {
+    return normalizePrinterId(value).toLowerCase();
+}
+
 export function parsePrinterConfig(
     value: unknown,
     previousId?: string,
@@ -58,11 +62,12 @@ export function parsePrinterConfig(
         return { errors };
     }
 
-    const id = normalizePrinterId(printer.id as string);
-    if (previousId && id !== previousId) {
+    const normalizedId = normalizePrinterId(printer.id as string);
+    if (previousId && getPrinterIdKey(normalizedId) !== getPrinterIdKey(previousId)) {
         errors.push('id cannot be changed after creation');
         return { errors };
     }
+    const id = previousId ?? normalizedId;
 
     return {
         config: {
@@ -82,10 +87,10 @@ export function getUniquePrinterConfigs(values: unknown[], options: PrinterConfi
     const ids = new Set<string>();
     return values.flatMap(value => {
         const parsed = parsePrinterConfig(value, undefined, options);
-        if (!parsed.config || ids.has(parsed.config.id)) {
+        if (!parsed.config || ids.has(getPrinterIdKey(parsed.config.id))) {
             return [];
         }
-        ids.add(parsed.config.id);
+        ids.add(getPrinterIdKey(parsed.config.id));
         return [parsed.config];
     });
 }
@@ -100,7 +105,7 @@ export function getPrinterConfigErrors(value: unknown, allowLegacyInfoId = false
 
     if (typeof printer.id !== 'string' || !/^[A-Za-z0-9_-]{1,32}$/.test(normalizePrinterId(printer.id))) {
         errors.push('id must contain 1-32 letters, digits, underscores, or hyphens');
-    } else if (!allowLegacyInfoId && normalizePrinterId(printer.id).toLowerCase() === 'info') {
+    } else if (getPrinterIdKey(printer.id) === 'info' && !allowLegacyInfoId) {
         errors.push('id is reserved by the adapter');
     }
     if (typeof printer.host !== 'string' || printer.host.trim() === '') {

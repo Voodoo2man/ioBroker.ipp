@@ -6,6 +6,6 @@
         "rootDir": ".",
         "declaration": false
     },
-    "include": ["lib/**/*.ts", "lib/**/*.d.ts", "test/**/*.ts", "test/**/*.d.ts"],
+    "include": ["src/lib/**/*.ts", "src/lib/**/*.d.ts", "test/**/*.ts", "test/**/*.d.ts"],
     "exclude": ["node_modules/**", "build/**", ".test-build/**"]
 }
