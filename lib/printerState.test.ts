@@ -57,7 +57,7 @@ describe('printerState', () => {
         expect(adapter.states.get('office.details.queued_job_count')).to.deep.equal({ val: 2, ack: true });
     });
 
-    it('clears old status and supply readings when the next successful poll lacks them', async () => {
+    it('keeps the last supply reading when the next successful poll lacks supply data', async () => {
         const adapter = makeAdapter();
         const printer = { id: 'office' };
         await publishSnapshot(adapter, printer, {
@@ -80,7 +80,7 @@ describe('printerState', () => {
         expect(adapter.states.get('office.status.message')).to.deep.equal({ val: null, ack: true });
         expect(adapter.states.get('office.status.state')).to.deep.equal({ val: null, ack: true });
         expect(adapter.states.get('office.counters.pages_completed')).to.deep.equal({ val: null, ack: true });
-        expect(adapter.states.get('office.supplies.0_black_toner')).to.deep.equal({ val: null, ack: true });
+        expect(adapter.states.get('office.supplies.0_black_toner')).to.deep.equal({ val: 70, ack: true });
         expect(adapter.states.get('office.details.printer_location')).to.deep.equal({ val: null, ack: true });
     });
 

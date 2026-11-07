@@ -112,14 +112,11 @@ export async function publishSnapshot(adapter: StateAdapter, printer: PrinterCon
         }
     }
 
-    const currentSupplyIds = new Set<string>();
     for (const [index, supply] of (result.supplies ?? []).entries()) {
         if (!validSupply(supply)) {
             continue;
         }
         const id = supplyStateId(printer.id, supply, index);
-        currentSupplyIds.add(id);
-        knownStates.add(id);
         await writeState(
             adapter,
             id,
@@ -185,9 +182,6 @@ export async function publishSnapshot(adapter: StateAdapter, printer: PrinterCon
     }
 
     for (const id of knownStates) {
-        if (id.startsWith(`${printer.id}.supplies.`) && !currentSupplyIds.has(id)) {
-            await adapter.setStateAsync(id, { val: null, ack: true });
-        }
         if (id.startsWith(`${printer.id}.details.`) && !currentDetailIds.has(id)) {
             await adapter.setStateAsync(id, { val: null, ack: true });
         }
