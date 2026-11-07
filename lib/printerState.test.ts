@@ -4,6 +4,7 @@ import { markOffline, publishSnapshot } from './printerState';
 function makeAdapter(storage = { states: new Map<string, unknown>(), objects: new Map<string, unknown>() }): {
     states: Map<string, unknown>;
     objects: Map<string, unknown>;
+    namespace: string;
     setObjectNotExistsAsync: (id: string, object: unknown) => Promise<void>;
     extendObjectAsync: (id: string, object: unknown) => Promise<void>;
     setStateAsync: (id: string, state: unknown) => Promise<void>;
@@ -13,6 +14,7 @@ function makeAdapter(storage = { states: new Map<string, unknown>(), objects: ne
     return {
         states,
         objects,
+        namespace: 'ipp.0',
         setObjectNotExistsAsync: (id: string, object: unknown) =>
             Promise.resolve(objects.has(id) ? undefined : objects.set(id, object)).then(() => undefined),
         extendObjectAsync: (id: string, object: unknown) => {
@@ -29,7 +31,9 @@ function makeAdapter(storage = { states: new Map<string, unknown>(), objects: ne
             Promise.resolve(
                 [...objects.keys()]
                     .filter(id => id.startsWith(`${parentDevice}.${parentChannel ?? ''}.`))
-                    .map(_id => ({ _id, type: 'state', common: {}, native: {} }) as ioBroker.StateObject),
+                    .map(
+                        _id => ({ _id: `ipp.0.${_id}`, type: 'state', common: {}, native: {} }) as ioBroker.StateObject,
+                    ),
             ),
     };
 }

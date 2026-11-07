@@ -18,7 +18,7 @@ Node.js 22 or newer, Admin 8.2.0 or newer, and js-controller 7.2.2 or newer are 
 
 Configure polling interval and request timeout in the **Basic configuration** tab. Add and manage printers in the **Printer configuration** tab using the Device Manager. Use its **Add printer**, **Edit**, and **Remove** actions; printer cards show the configured host, live connection state, and model when reported.
 
-The Device Manager stores printers in the existing `native.printers` configuration array, so existing printer configurations remain compatible.
+Printer configurations are stored in the adapter's backed-up file storage so saving other instance settings in Admin cannot overwrite concurrent Device Manager changes. Existing `native.printers` configurations are migrated automatically on first startup. Existing printers with the legacy ID `info` remain usable; new printers cannot use that ID.
 
 | Setting | Description |
 | --- | --- |
@@ -50,7 +50,7 @@ For supply reporting, the adapter combines each `marker-names` entry with the sa
 -->
 ### **WORK IN PROGRESS**
 
-- (Voodoo2man) Hardened IPP response handling, corrected supply percentages, and made Device Manager updates safer.
+- (Voodoo2man) Hardened IPP response handling, corrected supply percentages and state clearing, preserved legacy printer configurations, and isolated Device Manager storage from Admin saves.
 
 ### 0.1.1 (2026-11-07)
 

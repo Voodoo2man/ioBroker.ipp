@@ -10,6 +10,10 @@ export interface PrinterConfigResult {
     errors: string[];
 }
 
+export interface PrinterConfigParseOptions {
+    allowLegacyInfoId?: boolean;
+}
+
 function normalizeCheckbox(value: unknown): boolean | undefined | null {
     if (value === undefined || value === null || value === '') {
         return false;
@@ -31,8 +35,12 @@ function normalizePrinterId(value: string): string {
         .replace(/ß/g, 'ss');
 }
 
-export function parsePrinterConfig(value: unknown, previousId?: string): PrinterConfigResult {
-    const errors = getPrinterConfigErrors(value);
+export function parsePrinterConfig(
+    value: unknown,
+    previousId?: string,
+    options: PrinterConfigParseOptions = {},
+): PrinterConfigResult {
+    const errors = getPrinterConfigErrors(value, options.allowLegacyInfoId === true);
     if (!value || typeof value !== 'object' || Array.isArray(value) || errors.length > 0) {
         return { errors };
     }
@@ -70,10 +78,10 @@ export function parsePrinterConfig(value: unknown, previousId?: string): Printer
     };
 }
 
-export function getUniquePrinterConfigs(values: unknown[]): PrinterConfig[] {
+export function getUniquePrinterConfigs(values: unknown[], options: PrinterConfigParseOptions = {}): PrinterConfig[] {
     const ids = new Set<string>();
     return values.flatMap(value => {
-        const parsed = parsePrinterConfig(value);
+        const parsed = parsePrinterConfig(value, undefined, options);
         if (!parsed.config || ids.has(parsed.config.id)) {
             return [];
         }
@@ -82,7 +90,7 @@ export function getUniquePrinterConfigs(values: unknown[]): PrinterConfig[] {
     });
 }
 
-export function getPrinterConfigErrors(value: unknown): string[] {
+export function getPrinterConfigErrors(value: unknown, allowLegacyInfoId = false): string[] {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return ['row must be an object'];
     }
@@ -92,7 +100,7 @@ export function getPrinterConfigErrors(value: unknown): string[] {
 
     if (typeof printer.id !== 'string' || !/^[A-Za-z0-9_-]{1,32}$/.test(normalizePrinterId(printer.id))) {
         errors.push('id must contain 1-32 letters, digits, underscores, or hyphens');
-    } else if (normalizePrinterId(printer.id).toLowerCase() === 'info') {
+    } else if (!allowLegacyInfoId && normalizePrinterId(printer.id).toLowerCase() === 'info') {
         errors.push('id is reserved by the adapter');
     }
     if (typeof printer.host !== 'string' || printer.host.trim() === '') {

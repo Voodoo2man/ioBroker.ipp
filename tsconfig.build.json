@@ -6,6 +6,6 @@
         "rootDir": ".",
         "declaration": true
     },
-    "include": ["main.ts", "lib/printerIpp.ts", "lib/printerState.ts", "lib/adapter-config.d.ts", "lib/ipp.d.ts"],
+    "include": ["main.ts", "lib/printerIpp.ts", "lib/ippParserWorker.ts", "lib/printerState.ts", "lib/adapter-config.d.ts", "lib/ipp.d.ts"],
     "exclude": ["node_modules/**", "build/**"]
 }

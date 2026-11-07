@@ -6,6 +6,7 @@ interface PrinterConfig {
 }
 
 interface StateAdapter {
+    namespace: string;
     setObjectNotExistsAsync(id: string, object: ioBroker.SettableObject): Promise<unknown>;
     extendObjectAsync(id: string, object: { common: { states: Record<number, string> } }): Promise<unknown>;
     setStateAsync(id: string, state: ioBroker.SettableState): Promise<unknown>;
@@ -20,6 +21,16 @@ type Snapshot = Omit<Partial<PrinterSnapshot>, 'counters'> & {
 
 function stateObject(common: ioBroker.StateCommon): ioBroker.SettableObject {
     return { type: 'state', common, native: {} };
+}
+
+function fullStateId(adapter: StateAdapter, id: string): string {
+    const prefix = `${adapter.namespace}.`;
+    return id.startsWith(prefix) ? id : `${prefix}${id}`;
+}
+
+function localStateId(adapter: StateAdapter, id: string): string {
+    const prefix = `${adapter.namespace}.`;
+    return id.startsWith(prefix) ? id.slice(prefix.length) : id;
 }
 
 async function writeState(
@@ -98,7 +109,7 @@ export async function publishSnapshot(adapter: StateAdapter, printer: PrinterCon
 
     const existingStatusIds = new Set((await adapter.getStatesOfAsync(printer.id, 'status')).map(state => state._id));
     for (const status of statusValues) {
-        if (status.value !== null || existingStatusIds.has(status.id)) {
+        if (status.value !== null || existingStatusIds.has(fullStateId(adapter, status.id))) {
             await writeState(adapter, status.id, status.common, status.value);
         }
     }
@@ -142,12 +153,12 @@ export async function publishSnapshot(adapter: StateAdapter, printer: PrinterCon
                 { name, type: 'number', role: 'value', read: true, write: false, unit },
                 value,
             );
-            currentCounterIds.add(stateId);
+            currentCounterIds.add(fullStateId(adapter, stateId));
         }
     }
     for (const state of await adapter.getStatesOfAsync(printer.id, 'counters')) {
-        if (!currentCounterIds.has(state._id)) {
-            await adapter.setStateAsync(state._id, { val: null, ack: true });
+        if (!currentCounterIds.has(fullStateId(adapter, state._id))) {
+            await adapter.setStateAsync(localStateId(adapter, state._id), { val: null, ack: true });
         }
     }
 
@@ -161,7 +172,7 @@ export async function publishSnapshot(adapter: StateAdapter, printer: PrinterCon
         if (type !== 'string' && type !== 'number' && type !== 'boolean') {
             continue;
         }
-        currentDetailIds.add(stateId);
+        currentDetailIds.add(fullStateId(adapter, stateId));
         await writeState(
             adapter,
             stateId,
@@ -178,8 +189,8 @@ export async function publishSnapshot(adapter: StateAdapter, printer: PrinterCon
     }
 
     for (const state of await adapter.getStatesOfAsync(printer.id, 'details')) {
-        if (!currentDetailIds.has(state._id)) {
-            await adapter.setStateAsync(state._id, { val: null, ack: true });
+        if (!currentDetailIds.has(fullStateId(adapter, state._id))) {
+            await adapter.setStateAsync(localStateId(adapter, state._id), { val: null, ack: true });
         }
     }
 }

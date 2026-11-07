@@ -59,6 +59,16 @@ describe('printerConfig', () => {
         ]);
     });
 
+    it('keeps existing printers with the legacy info ID loadable', () => {
+        const config = { id: 'info', host: 'printer.local' };
+
+        expect(parsePrinterConfig(config, undefined, { allowLegacyInfoId: true }).config?.id).to.equal('info');
+        expect(getUniquePrinterConfigs([config], { allowLegacyInfoId: true }).map(printer => printer.id)).to.deep.equal(
+            ['info'],
+        );
+        expect(parsePrinterConfig(config, 'info', { allowLegacyInfoId: true }).config?.id).to.equal('info');
+    });
+
     it('explains invalid fields without exposing configured values', () => {
         const printer = { id: 'bad.id', host: '', port: 'ipp', basePath: 'ipp/print', ssl: 'maybe' };
 

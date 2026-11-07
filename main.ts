@@ -13,6 +13,7 @@ import {
     parsePrinterConfig,
     type PrinterConfig,
 } from './lib/printerConfig';
+import { loadPrinterConfigurations, savePrinterConfigurations } from './lib/printerConfigStore';
 import { SerialQueue } from './lib/serialQueue';
 import { isPrinterUnavailableError, pollPrinter } from './lib/printerIpp';
 import { markOffline, publishSnapshot } from './lib/printerState';
@@ -27,6 +28,7 @@ const printerIcon =
     'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22%3E%3Cpath fill=%22%23ffffff%22 d=%22M14 4h20v10H14zM10 14h28a4 4 0 0 1 4 4v14h-8v12H14V32H6V18a4 4 0 0 1 4-4m8 20v6h12v-6zm16-14a2 2 0 1 0 0 4 2 2 0 0 0 0-4%22/%3E%3C/svg%3E';
 
 function getPrinterFormSchema(idReadOnly = false): JsonFormSchema {
+    const reservedIdValidator = idReadOnly ? 'true' : "data.id.toLowerCase() !== 'info'";
     return {
         type: 'panel',
         items: {
@@ -34,8 +36,7 @@ function getPrinterFormSchema(idReadOnly = false): JsonFormSchema {
                 type: 'text',
                 label: 'ID',
                 readOnly: idReadOnly,
-                validator:
-                    "!!data.id && data.id.toLowerCase() !== 'info' && /^[A-Za-z0-9_-]{1,32}$/.test(data.id.replace(/Ä/g, 'Ae').replace(/Ö/g, 'Oe').replace(/Ü/g, 'Ue').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss'))",
+                validator: `!!data.id && ${reservedIdValidator} && /^[A-Za-z0-9_-]{1,32}$/.test(data.id.replace(/Ä/g, 'Ae').replace(/Ö/g, 'Oe').replace(/Ü/g, 'Ue').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss'))`,
             },
             label: { type: 'text', label: 'Label' },
             host: { type: 'text', label: 'Host', validator: '!!data.host' },
@@ -61,59 +62,76 @@ class Ipp extends Adapter {
     private configuredPrinterSettings: unknown[] = [];
     private readonly configUpdates = new SerialQueue();
     private readonly activeRequests = new Set<AbortController>();
+    private readonly configReady: Promise<void>;
+    private resolveConfigReady!: () => void;
+    private rejectConfigReady!: (error: unknown) => void;
     private configRevision = 0;
     private timeoutMs = DEFAULT_TIMEOUT_MS;
 
     constructor(options: Partial<AdapterOptions> = {}) {
         super({ ...options, name: 'ipp' });
+        this.configReady = new Promise<void>((resolve, reject) => {
+            this.resolveConfigReady = resolve;
+            this.rejectConfigReady = reject;
+        });
+        void this.configReady.catch(() => undefined);
         this.deviceManagement = new IppDeviceManagement(this);
         this.on('ready', this.onReady.bind(this));
         this.on('unload', this.onUnload.bind(this));
     }
 
     private async onReady(): Promise<void> {
-        const configuredPrinters: unknown = this.config.printers;
-        this.configuredPrinterSettings = Array.isArray(configuredPrinters) ? configuredPrinters : [];
-        const printerIds = new Set<string>();
-        if (!Array.isArray(configuredPrinters)) {
-            this.log.warn(`Printer configuration must be a table/array; received ${typeof configuredPrinters}`);
-        }
-        this.printers = (Array.isArray(configuredPrinters) ? configuredPrinters : []).flatMap((printer, index) => {
-            const parsed = parsePrinterConfig(printer);
-            if (parsed.config && printerIds.has(parsed.config.id)) {
-                parsed.errors.push('id duplicates another configured printer');
-                delete parsed.config;
+        try {
+            const configuredPrinters: unknown = this.config.printers;
+            if (!Array.isArray(configuredPrinters)) {
+                this.log.warn(`Printer configuration must be a table/array; received ${typeof configuredPrinters}`);
             }
-            if (!parsed.config) {
-                this.log.warn(`Ignoring printer row ${index + 1}: ${parsed.errors.join('; ')}`);
-                this.log.debug(`Printer row ${index + 1} fields: ${describePrinterConfig(printer)}`);
-                return [];
-            }
-            printerIds.add(parsed.config.id);
-            this.log.debug(`Accepted printer row ${index + 1}: ${describePrinterConfig(printer)}`);
-            return [parsed.config];
-        });
+            this.configuredPrinterSettings = await loadPrinterConfigurations(
+                this,
+                Array.isArray(configuredPrinters) ? configuredPrinters : [],
+            );
+            const printerIds = new Set<string>();
+            this.printers = this.configuredPrinterSettings.flatMap((printer, index) => {
+                const parsed = parsePrinterConfig(printer, undefined, { allowLegacyInfoId: true });
+                if (parsed.config && printerIds.has(parsed.config.id)) {
+                    parsed.errors.push('id duplicates another configured printer');
+                    delete parsed.config;
+                }
+                if (!parsed.config) {
+                    this.log.warn(`Ignoring printer row ${index + 1}: ${parsed.errors.join('; ')}`);
+                    this.log.debug(`Printer row ${index + 1} fields: ${describePrinterConfig(printer)}`);
+                    return [];
+                }
+                printerIds.add(parsed.config.id);
+                this.log.debug(`Accepted printer row ${index + 1}: ${describePrinterConfig(printer)}`);
+                return [parsed.config];
+            });
 
-        if (this.printers.length === 0) {
-            this.log.info('No valid printers configured');
-        }
-        for (const printer of this.printers) {
-            await this.createPrinterObjects(printer);
-        }
-
-        const intervalSeconds = boundedNumber(
-            this.config.intervalSeconds,
-            DEFAULT_INTERVAL_SECONDS,
-            MIN_INTERVAL_SECONDS,
-            MAX_INTERVAL_SECONDS,
-        );
-        this.timeoutMs = boundedNumber(this.config.timeoutMs, DEFAULT_TIMEOUT_MS, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS);
-        await this.pollPrinters();
-        if (!this.unloading) {
-            const timer = this.setInterval(() => void this.pollPrinters(), intervalSeconds * 1000);
-            if (timer) {
-                this.pollTimer = timer;
+            if (this.printers.length === 0) {
+                this.log.info('No valid printers configured');
             }
+            for (const printer of this.printers) {
+                await this.createPrinterObjects(printer);
+            }
+            this.resolveConfigReady();
+
+            const intervalSeconds = boundedNumber(
+                this.config.intervalSeconds,
+                DEFAULT_INTERVAL_SECONDS,
+                MIN_INTERVAL_SECONDS,
+                MAX_INTERVAL_SECONDS,
+            );
+            this.timeoutMs = boundedNumber(this.config.timeoutMs, DEFAULT_TIMEOUT_MS, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS);
+            await this.pollPrinters();
+            if (!this.unloading) {
+                const timer = this.setInterval(() => void this.pollPrinters(), intervalSeconds * 1000);
+                if (timer) {
+                    this.pollTimer = timer;
+                }
+            }
+        } catch (error) {
+            this.rejectConfigReady(error);
+            throw error;
         }
     }
 
@@ -147,17 +165,24 @@ class Ipp extends Adapter {
     }
 
     public getConfiguredPrinters(): PrinterConfig[] {
-        return getUniquePrinterConfigs(this.configuredPrinterSettings);
+        return getUniquePrinterConfigs(this.configuredPrinterSettings, { allowLegacyInfoId: true });
+    }
+
+    public waitForConfig(): Promise<void> {
+        return this.configReady;
     }
 
     public async savePrinter(printer: unknown, previousId?: string): Promise<void> {
         return this.configUpdates.run(async () => {
-            const parsed = parsePrinterConfig(printer, previousId);
+            await this.configReady;
+            const parsed = parsePrinterConfig(printer, previousId, {
+                allowLegacyInfoId: previousId?.toLowerCase() === 'info',
+            });
             if (!parsed.config) {
                 throw new Error(parsed.errors.join('; '));
             }
             const printers = this.configuredPrinterSettings.filter(config => {
-                const configured = parsePrinterConfig(config).config;
+                const configured = parsePrinterConfig(config, undefined, { allowLegacyInfoId: true }).config;
                 return !configured || configured.id !== previousId;
             });
             if (
@@ -172,8 +197,11 @@ class Ipp extends Adapter {
 
     public async removePrinter(id: string): Promise<void> {
         return this.configUpdates.run(async () => {
+            await this.configReady;
             await this.savePrinterList(
-                this.configuredPrinterSettings.filter(config => parsePrinterConfig(config).config?.id !== id),
+                this.configuredPrinterSettings.filter(
+                    config => parsePrinterConfig(config, undefined, { allowLegacyInfoId: true }).config?.id !== id,
+                ),
             );
         });
     }
@@ -190,25 +218,23 @@ class Ipp extends Adapter {
         }
         await this.activePoll;
         try {
-            await this.updateConfig({ printers });
+            await savePrinterConfigurations(this, printers);
         } catch (error) {
             this.configRevision++;
             throw error;
         }
         this.configuredPrinterSettings = printers;
-        const printerIds = new Set<string>();
-        this.printers = printers.flatMap(printer => {
-            const parsed = parsePrinterConfig(printer);
-            if (!parsed.config || printerIds.has(parsed.config.id)) {
-                return [];
-            }
-            printerIds.add(parsed.config.id);
-            return [parsed.config];
-        });
+        this.printers = getUniquePrinterConfigs(printers, { allowLegacyInfoId: true });
         const currentIds = new Set(this.printers.map(printer => printer.id));
         for (const id of previousIds) {
             if (!currentIds.has(id)) {
-                await this.delObjectAsync(id, { recursive: true });
+                if (id === 'info') {
+                    for (const channel of ['status', 'supplies', 'counters', 'details']) {
+                        await this.delObjectAsync(`info.${channel}`, { recursive: true });
+                    }
+                } else {
+                    await this.delObjectAsync(id, { recursive: true });
+                }
             }
         }
         for (const printer of this.printers) {
@@ -334,7 +360,8 @@ class IppDeviceManagement extends DeviceManagement<Ipp, string> {
         };
     }
 
-    protected override loadDevices(context: DeviceLoadContext<string>): void {
+    protected override async loadDevices(context: DeviceLoadContext<string>): Promise<void> {
+        await this.adapter.waitForConfig();
         const printers = this.adapter.getConfiguredPrinters();
         context.setTotalDevices(printers.length);
         for (const printer of printers) {
