@@ -47,7 +47,7 @@ For supply reporting, the adapter combines `marker-names` with the corresponding
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
-### **WORK IN PROGRESS**
+### 0.1.1 (2026-11-07)
 
 - (Voodoo2man) Kept the last toner readings when printers temporarily omit supply data.
 

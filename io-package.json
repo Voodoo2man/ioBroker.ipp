@@ -2,8 +2,21 @@
   "common": {
     "name": "ipp",
     "nogit": true,
-    "version": "0.1.0",
+    "version": "0.1.1",
     "news": {
+      "0.1.1": {
+        "en": "Kept the last toner readings when printers temporarily omit supply data.",
+        "de": "Hat die letzten Tonerwerte beibehalten, wenn Drucker leer sind.",
+        "ru": "Сохраняет последние показания тонера, когда принтеры временно пропускают данные о питании.",
+        "pt": "Manteve as últimas leituras de toner quando as impressoras omitiram.",
+        "nl": "De laatste tonerwaarden zijn bijgehouden wanneer printers tijdelijk voedingsgegevens weglaten.",
+        "fr": "J'ai gardé les derniers relevés de toner lorsque les imprimantes omettaient.",
+        "it": "Ha tenuto gli ultimi dati del toner se le stampanti omettono i dati.",
+        "es": "Guardó las últimas lecturas de tóner cuando las impresoras omiten",
+        "pl": "Zachował ostatnie odczyty tonera, gdy drukarki tymczasowo pomijają dane dotyczące zasilania.",
+        "uk": "Зберігаються останні показання тонера, коли принтери тимчасово опускають дані про постачання.",
+        "zh-cn": "当打印机暂时省略供应数据时，保留最新的碳粉读数。"
+      },
       "0.1.0": {
         "en": "Replaced the printer list with Device Manager configuration and split basic settings into a separate tab.",
         "de": "Ersetzte die Druckerliste durch den Gerätemanager und teilte die Grundeinstellungen auf.",
