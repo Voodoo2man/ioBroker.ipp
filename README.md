@@ -24,9 +24,9 @@ Printer configurations are stored in the adapter's backed-up file storage so sav
 | --- | --- |
 | ID | Stable object-tree identifier; use 1-32 letters, digits, underscores, or hyphens. German umlauts are transliterated (`ä` to `ae`, `ö` to `oe`, `ü` to `ue`, `ß` to `ss`). The ID cannot be changed after creation because it determines the printer's state IDs. |
 | Label | Display name for the printer. |
-| Host | Printer hostname or IP address. |
+| Host | Printer hostname or IP address without a scheme, port, credentials, path, query, fragment, or embedded whitespace. IPv6 literals must be enclosed in brackets. |
 | Port | IPP port; defaults to `631`. |
-| IPP resource path | Printer resource path; defaults to `/ipp/print`. |
+| IPP resource path | Absolute resource path without `..`, whitespace, query, or fragment; defaults to `/ipp/print`. |
 | Use TLS | Use IPPS over TLS. |
 | Verify TLS certificate | Validate the printer's TLS certificate; disabled by default for self-signed printer certificates. |
 
@@ -38,7 +38,7 @@ When a printer is switched off or temporarily unreachable, the adapter marks it 
 
 ## States
 
-Each configured printer gets a device with `status`, `supplies`, `counters`, and `details` channels. Supplementary IPP attributes are created directly under `details` (for example, `details.printer_location`); attributes already represented by the canonical status, model, and counter states are not duplicated. The adapter requests all IPP attributes and creates states for returned values except explicitly excluded capabilities, verbose attribute families, and raw marker values; selected capability/default attributes are retained. Arrays and structured values are stored as JSON strings; scalar values keep their boolean, number, or string type. Unknown, non-excluded attributes are added automatically under `details`. `status.online` is always present; `status.model`, `status.message`, and numeric `status.state` are published when supported. The state value is `0` (`off`) while the printer is unreachable, and returns to the reported IPP state when it reconnects. Previously read measurements remain available while offline, and the last toner readings are retained if a poll does not include valid supply data. IPP `marker-levels` are already percentage values and are used directly; optional low/high marker levels do not rescale them. Invalid, reserved, or out-of-range values are skipped, while a supply keeps its original position in the printer's marker arrays. `pages_completed`, `impressions_completed`, and `media_sheets_completed` are created only when the printer reports them. Missing counter and detail values are cleared rather than replaced with zero during successful polls, including after adapter restarts. Request details are not logged.
+Each configured printer gets a device with `status`, `supplies`, `counters`, and `details` channels. Supplementary IPP attributes are created directly under `details` (for example, `details.printer_location`); attributes already represented by the canonical status, model, and counter states are not duplicated. The adapter requests all IPP attributes and creates states for returned values except explicitly excluded capabilities, verbose attribute families, and raw marker values; selected capability/default attributes are retained. Arrays and structured values are stored as JSON strings; scalar values keep their boolean, number, or string type. Unknown, non-excluded attributes are added automatically under `details`; normalized ID collisions receive numeric suffixes so each attribute has a distinct state. `status.online` is always present; `status.model`, `status.message`, and numeric `status.state` are published when supported. The state value is `0` (`off`) while the printer is unreachable, and returns to the reported IPP state when it reconnects. Previously read measurements remain available while offline, and the last toner readings are retained if a poll does not include valid supply data. IPP `marker-levels` are already percentage values and are used directly; optional low/high marker levels do not rescale them. Invalid, reserved, or out-of-range values are skipped, while a supply keeps its original position in the printer's marker arrays. `pages_completed`, `impressions_completed`, and `media_sheets_completed` are created only when the printer reports them. Missing counter and detail values are cleared rather than replaced with zero during successful polls, including after adapter restarts. Request details are not logged.
 
 For supply reporting, the adapter combines each `marker-names` entry with the same-position `marker-levels` entry; `marker-types` is used when supplied. A supply is skipped if its name or percentage value is missing, invalid, or outside 0-100. Counters map from `pages-completed`, `impressions-completed`, and `media-sheets-completed` to `pages_completed`, `impressions_completed`, and `media_sheets_completed`. When reporting missing values, include the printer model and firmware, which of these IPP attributes the printer returns, and the raw values or state IDs that are absent.
 
@@ -52,6 +52,7 @@ For supply reporting, the adapter combines each `marker-names` entry with the sa
 ### **WORK IN PROGRESS**
 
 - (Voodoo2man) Hardened IPP response handling, corrected supply percentages and state clearing, preserved legacy printer configurations, normalized printer IDs, refreshed state metadata, localized Device Manager actions, scheduled polls after each completed cycle, and isolated Device Manager storage from Admin saves.
+- (Voodoo2man) Aligned saved endpoint validation with polling, made colliding dynamic detail IDs unique, and removed unused UI translation entries.
 
 ### 0.1.1 (2026-11-07)
 

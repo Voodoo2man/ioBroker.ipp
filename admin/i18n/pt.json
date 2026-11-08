@@ -1,22 +1,6 @@
 {
     "Basic configuration": "Configuração básica",
     "Printer configuration": "Configuração de impressoras",
-    "Add printer": "Adicionar impressora",
-    "Edit printer": "Editar impressora",
-    "Edit printer configuration": "Editar configuração da impressora",
-    "Remove printer": "Remover impressora",
-    "Remove this printer?": "Remover esta impressora?",
-    "Online": "Online",
-    "Model": "Modelo",
-    "ipp adapter settings": "Configurações do adaptador ipp",
-    "Printers": "Impressoras",
-    "ID": "ID",
-    "Label": "Nome",
-    "Host": "Host",
-    "Port": "Porta",
-    "IPP resource path": "Caminho do recurso IPP",
-    "Use TLS": "Usar TLS",
-    "Verify TLS certificate": "Verificar certificado TLS",
     "Polling interval (seconds)": "Intervalo de consulta (segundos)",
     "Request timeout (milliseconds)": "Tempo limite da solicitação (milissegundos)"
 }

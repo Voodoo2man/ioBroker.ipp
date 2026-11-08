@@ -123,6 +123,24 @@ describe('printerIpp', () => {
         expect(snapshot.details.some(detail => detail.id === 'finishings_supported')).to.equal(false);
     });
 
+    it('assigns distinct detail IDs when different attributes normalize to the same ID', () => {
+        const snapshot = normalizeSnapshot({
+            statusCode: 'successful-ok',
+            'printer-attributes-tag': {
+                vendor_a_2: 'existing suffix',
+                vendor_a: 'underscored',
+                'vendor-a': 'hyphenated',
+            },
+        });
+
+        expect(snapshot.details).to.deep.equal([
+            { id: 'vendor_a', name: 'vendor a', value: 'hyphenated' },
+            { id: 'vendor_a_2', name: 'vendor_a', value: 'underscored' },
+            { id: 'vendor_a_2_2', name: 'vendor_a_2', value: 'existing suffix' },
+        ]);
+        expect(new Set(snapshot.details.map(detail => detail.id)).size).to.equal(snapshot.details.length);
+    });
+
     it('preserves zero values and represents unsupported values as null', () => {
         const snapshot = normalizeSnapshot({
             statusCode: 'successful-ok',
@@ -234,6 +252,14 @@ describe('printerIpp', () => {
             }
             await expectRejection(pollPrinter({ host: '127.0.0.1', port: address.port, timeoutMs: 2000 }), Error);
             await expectRejection(pollPrinter({ host: 'printer/path', port: address.port }), TypeError);
+            await expectRejection(
+                pollPrinter({ host: '127.0.0.1', port: address.port, basePath: '/ipp/print?x' }),
+                TypeError,
+            );
+            await expectRejection(
+                pollPrinter({ host: '127.0.0.1', port: address.port, basePath: '/ipp print' }),
+                TypeError,
+            );
         } finally {
             await new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
         }

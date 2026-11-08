@@ -1,4 +1,5 @@
 import type { PrinterEndpoint } from './printerIpp';
+import { isValidIppBasePath, isValidPrinterHost } from './printerEndpoint';
 
 export interface PrinterConfig extends PrinterEndpoint {
     id: string;
@@ -110,6 +111,8 @@ export function getPrinterConfigErrors(value: unknown, allowLegacyInfoId = false
     }
     if (typeof printer.host !== 'string' || printer.host.trim() === '') {
         errors.push('host is missing or is not text');
+    } else if (!isValidPrinterHost(printer.host)) {
+        errors.push('host must be a valid hostname or IP address');
     }
     if (
         printer.port !== undefined &&
@@ -118,11 +121,8 @@ export function getPrinterConfigErrors(value: unknown, allowLegacyInfoId = false
     ) {
         errors.push('port must be an integer from 1 to 65535');
     }
-    if (
-        printer.basePath !== undefined &&
-        (typeof printer.basePath !== 'string' || !printer.basePath.startsWith('/') || printer.basePath.includes('..'))
-    ) {
-        errors.push('basePath must start with / and must not contain ..');
+    if (printer.basePath !== undefined && !isValidIppBasePath(printer.basePath)) {
+        errors.push('basePath must be an absolute path without .., query, fragment, whitespace, or backslash');
     }
     for (const key of ['ssl', 'verifySsl']) {
         if (normalizeCheckbox(printer[key]) === null) {

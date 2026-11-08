@@ -15,6 +15,7 @@ import {
     type PrinterConfig,
 } from './lib/printerConfig';
 import { loadPrinterConfigurations, savePrinterConfigurations } from './lib/printerConfigStore';
+import { isValidIppBasePath, isValidPrinterHost } from './lib/printerEndpoint';
 import { SerialQueue } from './lib/serialQueue';
 import { isPrinterUnavailableError, pollPrinter } from './lib/printerIpp';
 import { markOffline, publishSnapshot } from './lib/printerState';
@@ -285,9 +286,18 @@ function getPrinterFormSchema(idReadOnly = false): JsonFormSchema {
                 validator: `!!data.id && ${reservedIdValidator} && /^[A-Za-z0-9_-]{1,32}$/.test(data.id.replace(/Ä/g, 'Ae').replace(/Ö/g, 'Oe').replace(/Ü/g, 'Ue').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss'))`,
             },
             label: { type: 'text', label: translations.label },
-            host: { type: 'text', label: translations.host, validator: '!!data.host' },
+            host: {
+                type: 'text',
+                label: translations.host,
+                validator: `(${isValidPrinterHost.toString()})(data.host)`,
+            },
             port: { type: 'number', label: translations.port, min: 1, max: 65535, default: 631 },
-            basePath: { type: 'text', label: translations.ippResourcePath, default: '/ipp/print' },
+            basePath: {
+                type: 'text',
+                label: translations.ippResourcePath,
+                default: '/ipp/print',
+                validator: `(${isValidIppBasePath.toString()})(data.basePath)`,
+            },
             ssl: { type: 'checkbox', label: translations.useTls },
             verifySsl: { type: 'checkbox', label: translations.verifyTlsCertificate, default: false },
         },

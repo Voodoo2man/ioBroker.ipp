@@ -86,9 +86,35 @@ describe('printerConfig', () => {
             'id must contain 1-32 letters, digits, underscores, or hyphens',
             'host is missing or is not text',
             'port must be an integer from 1 to 65535',
-            'basePath must start with / and must not contain ..',
+            'basePath must be an absolute path without .., query, fragment, whitespace, or backslash',
             'ssl must be true/false, 1/0, or an unchecked checkbox',
         ]);
+    });
+
+    it('rejects hostnames and resource paths that runtime polling cannot use', () => {
+        for (const host of [
+            'printer/path',
+            'printer?query',
+            'printer name',
+            'user@printer',
+            'printer\\path',
+            'printer:631',
+        ]) {
+            expect(getPrinterConfigErrors({ id: 'office', host })).to.include(
+                'host must be a valid hostname or IP address',
+            );
+        }
+
+        for (const basePath of ['/ipp/print?x', '/ipp/print#fragment', '/ipp print', '/ipp/../print']) {
+            expect(getPrinterConfigErrors({ id: 'office', host: 'printer.local', basePath })).to.include(
+                'basePath must be an absolute path without .., query, fragment, whitespace, or backslash',
+            );
+        }
+
+        expect(getPrinterConfigErrors({ id: 'office', host: 'printer.local', basePath: '/ipp/print' })).to.deep.equal(
+            [],
+        );
+        expect(getPrinterConfigErrors({ id: 'office', host: '[::1]' })).to.deep.equal([]);
     });
 
     it('normalizes Admin checkbox values from booleans, strings, and numeric flags', () => {

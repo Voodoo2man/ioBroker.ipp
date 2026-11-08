@@ -1,22 +1,6 @@
 {
     "Basic configuration": "Basisconfiguratie",
     "Printer configuration": "Printerconfiguratie",
-    "Add printer": "Printer toevoegen",
-    "Edit printer": "Printer bewerken",
-    "Edit printer configuration": "Printerconfiguratie bewerken",
-    "Remove printer": "Printer verwijderen",
-    "Remove this printer?": "Deze printer verwijderen?",
-    "Online": "Online",
-    "Model": "Model",
-    "ipp adapter settings": "Adapterinstellingen voor ipp",
-    "Printers": "Printers",
-    "ID": "ID",
-    "Label": "Naam",
-    "Host": "Host",
-    "Port": "Poort",
-    "IPP resource path": "IPP-resourcepad",
-    "Use TLS": "TLS gebruiken",
-    "Verify TLS certificate": "TLS-certificaat verifiëren",
     "Polling interval (seconds)": "Pollinterval (seconden)",
     "Request timeout (milliseconds)": "Time-out voor verzoeken (milliseconden)"
 }

@@ -3,6 +3,7 @@ import https from 'node:https';
 import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import * as ipp from '@sealsystems/ipp';
+import { isValidIppBasePath, isValidPrinterHost } from './printerEndpoint';
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const PRINTER_UNAVAILABLE_CODES = new Set([
@@ -247,10 +248,6 @@ function normalizePrinterState(value: unknown): number | null {
     return null;
 }
 
-function validHost(host: string): boolean {
-    return host.trim() !== '' && !/[/?#@\s]/.test(host.trim());
-}
-
 function responseAttributes(response: ipp.IppResponse): Record<string, unknown> {
     const attributes = response['printer-attributes-tag'] ?? response['unsupported-attributes-tag'];
     return attributes && typeof attributes === 'object' ? (attributes as Record<string, unknown>) : {};
@@ -307,23 +304,37 @@ export function normalizeSnapshot(response: ipp.IppResponse): PrinterSnapshot {
             },
         ];
     });
-    const details = Object.entries(attributes).flatMap(([attribute, rawValue]) => {
-        if (DEDICATED_STATE_ATTRIBUTES.has(attribute)) {
-            return [];
-        }
-        if (
-            !RETAINED_ATTRIBUTE_OVERRIDES.has(attribute) &&
-            (EXCLUDED_ATTRIBUTES.has(attribute) ||
-                EXCLUDED_ATTRIBUTE_FAMILIES.some(pattern => pattern.test(attribute)) ||
-                /^marker-(colors|high-levels|levels|low-levels|names|types)$/.test(attribute))
-        ) {
-            return [];
-        }
-        const value = detailValue(rawValue);
-        const id = detailId(attribute);
-        const name = DETAIL_NAMES.get(attribute) ?? attribute.replace(/-/g, ' ');
-        return id && value !== null ? [{ id, name, value }] : [];
-    });
+    const detailIds = new Set<string>();
+    const details = Object.entries(attributes)
+        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+        .flatMap(([attribute, rawValue]) => {
+            if (DEDICATED_STATE_ATTRIBUTES.has(attribute)) {
+                return [];
+            }
+            if (
+                !RETAINED_ATTRIBUTE_OVERRIDES.has(attribute) &&
+                (EXCLUDED_ATTRIBUTES.has(attribute) ||
+                    EXCLUDED_ATTRIBUTE_FAMILIES.some(pattern => pattern.test(attribute)) ||
+                    /^marker-(colors|high-levels|levels|low-levels|names|types)$/.test(attribute))
+            ) {
+                return [];
+            }
+            const value = detailValue(rawValue);
+            const baseId = detailId(attribute);
+            if (!baseId || value === null) {
+                return [];
+            }
+
+            let id = baseId;
+            let suffix = 2;
+            while (detailIds.has(id)) {
+                id = `${baseId}_${suffix++}`;
+            }
+            detailIds.add(id);
+
+            const name = DETAIL_NAMES.get(attribute) ?? attribute.replace(/-/g, ' ');
+            return [{ id, name, value }];
+        });
 
     return {
         online: true,
@@ -502,14 +513,16 @@ export async function pollPrinter({
     signal,
 }: PrinterEndpoint): Promise<PrinterSnapshot> {
     const numericPort = Number(port);
-    if (!validHost(host)) {
+    if (!isValidPrinterHost(host)) {
         throw new TypeError('A valid printer host is required');
     }
     if (!Number.isInteger(numericPort) || numericPort < 1 || numericPort > 65535) {
         throw new TypeError('Printer port must be an integer between 1 and 65535');
     }
-    if (!basePath.startsWith('/') || basePath.includes('..') || /[?#\s]/.test(basePath)) {
-        throw new TypeError('IPP base path must be an absolute path without query or fragment');
+    if (!isValidIppBasePath(basePath)) {
+        throw new TypeError(
+            'IPP base path must be an absolute path without query, fragment, whitespace, backslash, or ..',
+        );
     }
     if (!Number.isInteger(timeoutMs) || timeoutMs < 500 || timeoutMs > 30000) {
         throw new TypeError('timeoutMs must be an integer between 500 and 30000');
