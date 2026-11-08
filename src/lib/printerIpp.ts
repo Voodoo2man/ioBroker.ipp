@@ -186,8 +186,8 @@ export interface PrinterEndpoint {
 }
 
 export interface PrinterRequestTimer {
-    setTimeout(callback: () => void, timeout: number): ioBroker.Timeout | undefined;
-    clearTimeout(timeout: ioBroker.Timeout | undefined): void;
+    schedule(callback: () => void, timeout: number): ioBroker.Timeout | undefined;
+    cancel(timeout: ioBroker.Timeout | undefined): void;
 }
 
 export interface PrinterSupply {
@@ -396,7 +396,7 @@ function sendRequest(
                 return;
             }
             settled = true;
-            timer.clearTimeout(controls.deadline);
+            timer.cancel(controls.deadline);
             if (controls.onAbort) {
                 signal?.removeEventListener('abort', controls.onAbort);
             }
@@ -480,14 +480,13 @@ function sendRequest(
             },
         );
         controls.request = request;
-        const deadline = timer.setTimeout(() => {
+        const deadline = timer.schedule(() => {
             const error = timeoutError();
             request.destroy(error);
             finish(error);
         }, timeoutMs);
         controls.deadline = deadline;
         controls.onAbort = onAbort;
-        request.setTimeout(timeoutMs, () => request.destroy(timeoutError()));
         request.on('error', (error: NodeJS.ErrnoException) => {
             const wrappedError = new Error(
                 error.code === 'ETIMEDOUT'

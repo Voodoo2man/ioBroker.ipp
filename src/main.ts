@@ -595,8 +595,8 @@ class Ipp extends Adapter {
                     signal: controller.signal,
                 },
                 {
-                    setTimeout: (callback, timeout) => this.setTimeout(callback, timeout),
-                    clearTimeout: timer => this.clearTimeout(timer),
+                    schedule: (callback, timeout) => this.setTimeout(callback, timeout),
+                    cancel: timer => this.clearTimeout(timer),
                 },
             );
             if (this.isCurrentPoll(printer, revision)) {

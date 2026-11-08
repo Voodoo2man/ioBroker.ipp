@@ -5,9 +5,9 @@ import * as ipp from '@sealsystems/ipp';
 import { isPrinterUnavailableError, normalizeSnapshot, pollPrinter } from '../../src/lib/printerIpp';
 
 const requestTimer = {
-    setTimeout: (callback: () => void, timeout: number): ioBroker.Timeout | undefined =>
+    schedule: (callback: () => void, timeout: number): ioBroker.Timeout | undefined =>
         setTimeout(callback, timeout) as unknown as ioBroker.Timeout,
-    clearTimeout: (timer: ioBroker.Timeout | undefined): void => clearTimeout(timer as unknown as NodeJS.Timeout),
+    cancel: (timer: ioBroker.Timeout | undefined): void => clearTimeout(timer as unknown as NodeJS.Timeout),
 };
 
 function pollPrinterWithNodeTimer(endpoint: Parameters<typeof pollPrinter>[0]): ReturnType<typeof pollPrinter> {
@@ -196,13 +196,13 @@ describe('printerIpp', () => {
         let deadlineScheduled = false;
         let deadlineCleared = false;
         const trackedTimer = {
-            setTimeout: (callback: () => void, timeout: number) => {
+            schedule: (callback: () => void, timeout: number) => {
                 deadlineScheduled = true;
-                return requestTimer.setTimeout(callback, timeout);
+                return requestTimer.schedule(callback, timeout);
             },
-            clearTimeout: (timer: ioBroker.Timeout | undefined) => {
+            cancel: (timer: ioBroker.Timeout | undefined) => {
                 deadlineCleared = true;
-                requestTimer.clearTimeout(timer);
+                requestTimer.cancel(timer);
             },
         };
         const server = http.createServer((request, response) => {
