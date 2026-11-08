@@ -1,22 +1,6 @@
 {
     "Basic configuration": "基本配置",
     "Printer configuration": "打印机配置",
-    "Add printer": "添加打印机",
-    "Edit printer": "编辑打印机",
-    "Edit printer configuration": "编辑打印机配置",
-    "Remove printer": "移除打印机",
-    "Remove this printer?": "确定移除此打印机吗？",
-    "Online": "在线",
-    "Model": "型号",
-    "ipp adapter settings": "ipp 适配器设置",
-    "Printers": "打印机",
-    "ID": "ID",
-    "Label": "名称",
-    "Host": "主机",
-    "Port": "端口",
-    "IPP resource path": "IPP 资源路径",
-    "Use TLS": "使用 TLS",
-    "Verify TLS certificate": "验证 TLS 证书",
     "Polling interval (seconds)": "轮询间隔（秒）",
     "Request timeout (milliseconds)": "请求超时（毫秒）"
 }

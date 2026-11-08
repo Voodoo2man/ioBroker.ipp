@@ -1,22 +1,6 @@
 {
-    "ipp adapter settings": "Adapter settings for ipp",
     "Basic configuration": "Basic configuration",
     "Printer configuration": "Printer configuration",
-    "Add printer": "Add printer",
-    "Edit printer": "Edit printer",
-    "Edit printer configuration": "Edit printer configuration",
-    "Remove printer": "Remove printer",
-    "Remove this printer?": "Remove this printer?",
-    "Online": "Online",
-    "Model": "Model",
-    "Printers": "Printers",
-    "ID": "ID",
-    "Label": "Label",
-    "Host": "Host",
-    "Port": "Port",
-    "IPP resource path": "IPP resource path",
-    "Use TLS": "Use TLS",
-    "Verify TLS certificate": "Verify TLS certificate",
     "Polling interval (seconds)": "Polling interval (seconds)",
     "Request timeout (milliseconds)": "Request timeout (milliseconds)"
 }

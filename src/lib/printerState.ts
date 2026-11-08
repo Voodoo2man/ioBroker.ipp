@@ -6,10 +6,13 @@ interface PrinterConfig {
 }
 
 interface StateAdapter {
-    printerStateIds?: Map<string, Set<string>>;
+    namespace: string;
     setObjectNotExistsAsync(id: string, object: ioBroker.SettableObject): Promise<unknown>;
+    getObjectAsync(id: string): Promise<ioBroker.Object | null | undefined>;
+    setObjectAsync(id: string, object: ioBroker.SettableObject): Promise<unknown>;
     extendObjectAsync(id: string, object: { common: { states: Record<number, string> } }): Promise<unknown>;
     setStateAsync(id: string, state: ioBroker.SettableState): Promise<unknown>;
+    getStatesOfAsync(parentDevice: string, parentChannel?: string): Promise<ioBroker.StateObject[]>;
 }
 
 type Snapshot = Omit<Partial<PrinterSnapshot>, 'counters'> & {
@@ -22,13 +25,49 @@ function stateObject(common: ioBroker.StateCommon): ioBroker.SettableObject {
     return { type: 'state', common, native: {} };
 }
 
+const managedCommonKeys = ['name', 'type', 'role', 'read', 'write', 'min', 'max', 'unit', 'states'] as const;
+
+function fullStateId(adapter: StateAdapter, id: string): string {
+    const prefix = `${adapter.namespace}.`;
+    return id.startsWith(prefix) ? id : `${prefix}${id}`;
+}
+
+function localStateId(adapter: StateAdapter, id: string): string {
+    const prefix = `${adapter.namespace}.`;
+    return id.startsWith(prefix) ? id.slice(prefix.length) : id;
+}
+
 async function writeState(
     adapter: StateAdapter,
     id: string,
     common: ioBroker.StateCommon,
     value: unknown,
 ): Promise<void> {
-    await adapter.setObjectNotExistsAsync(id, stateObject(common));
+    const existing = await adapter.getObjectAsync(id);
+    if (!existing) {
+        await adapter.setObjectNotExistsAsync(id, stateObject(common));
+    } else {
+        const existingCommon = existing.common as ioBroker.StateCommon;
+        const metadataChanged =
+            existing.type !== 'state' ||
+            managedCommonKeys.some(key => JSON.stringify(existingCommon[key]) !== JSON.stringify(common[key]));
+        if (metadataChanged) {
+            const updatedCommon: Record<string, unknown> = { ...existingCommon };
+            for (const key of managedCommonKeys) {
+                if (common[key] === undefined) {
+                    delete updatedCommon[key];
+                } else {
+                    updatedCommon[key] = common[key];
+                }
+            }
+            await adapter.setObjectAsync(id, {
+                type: 'state',
+                common: updatedCommon as unknown as ioBroker.StateCommon,
+                native: existing.native ?? {},
+                acl: existing.type === 'state' ? existing.acl : undefined,
+            });
+        }
+    }
     await adapter.setStateAsync(id, { val: value as ioBroker.StateValue, ack: true });
 }
 
@@ -54,21 +93,17 @@ function supplyStateId(printerId: string, supply: PrinterSupply, index: number):
     return `${printerId}.supplies.${index}_${slug || 'supply'}`;
 }
 
-function getPrinterStates(adapter: StateAdapter, printerId: string): Set<string> {
-    adapter.printerStateIds ??= new Map();
-    if (!adapter.printerStateIds.has(printerId)) {
-        adapter.printerStateIds.set(printerId, new Set());
-    }
-    return adapter.printerStateIds.get(printerId)!;
-}
-
 export async function publishSnapshot(adapter: StateAdapter, printer: PrinterConfig, result: Snapshot): Promise<void> {
     if (result.online !== true) {
         await markOffline(adapter, printer);
         return;
     }
-    await adapter.setStateAsync(`${printer.id}.status.online`, { val: true, ack: true });
-    const knownStates = getPrinterStates(adapter, printer.id);
+    await writeState(
+        adapter,
+        `${printer.id}.status.online`,
+        { name: 'Online', type: 'boolean', role: 'indicator', read: true, write: false },
+        true,
+    );
 
     const statusValues: Array<{
         id: string;
@@ -105,10 +140,10 @@ export async function publishSnapshot(adapter: StateAdapter, printer: PrinterCon
         },
     ];
 
+    const existingStatusIds = new Set((await adapter.getStatesOfAsync(printer.id, 'status')).map(state => state._id));
     for (const status of statusValues) {
-        if (status.value !== null || knownStates.has(status.id)) {
+        if (status.value !== null || existingStatusIds.has(fullStateId(adapter, status.id))) {
             await writeState(adapter, status.id, status.common, status.value);
-            knownStates.add(status.id);
         }
     }
 
@@ -116,7 +151,7 @@ export async function publishSnapshot(adapter: StateAdapter, printer: PrinterCon
         if (!validSupply(supply)) {
             continue;
         }
-        const id = supplyStateId(printer.id, supply, index);
+        const id = supplyStateId(printer.id, supply, supply.sourceIndex ?? index);
         await writeState(
             adapter,
             id,
@@ -139,18 +174,24 @@ export async function publishSnapshot(adapter: StateAdapter, printer: PrinterCon
         ['impressionsCompleted', 'impressions_completed', 'Impressions completed', 'impressions'],
         ['mediaSheetsCompleted', 'media_sheets_completed', 'Media sheets completed', 'sheets'],
     ] as const;
+    const currentCounterIds = new Set<string>();
     for (const [key, id, name, unit] of counterDefinitions) {
         const stateId = `${printer.id}.counters.${id}`;
         const candidate = result.counters?.[key];
         const value = typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0 ? candidate : null;
-        if (value !== null || knownStates.has(stateId)) {
+        if (value !== null) {
             await writeState(
                 adapter,
                 stateId,
                 { name, type: 'number', role: 'value', read: true, write: false, unit },
                 value,
             );
-            knownStates.add(stateId);
+            currentCounterIds.add(fullStateId(adapter, stateId));
+        }
+    }
+    for (const state of await adapter.getStatesOfAsync(printer.id, 'counters')) {
+        if (!currentCounterIds.has(fullStateId(adapter, state._id))) {
+            await adapter.setStateAsync(localStateId(adapter, state._id), { val: null, ack: true });
         }
     }
 
@@ -160,12 +201,11 @@ export async function publishSnapshot(adapter: StateAdapter, printer: PrinterCon
             continue;
         }
         const stateId = `${printer.id}.details.${detail.id}`;
-        currentDetailIds.add(stateId);
-        knownStates.add(stateId);
         const type = typeof detail.value;
         if (type !== 'string' && type !== 'number' && type !== 'boolean') {
             continue;
         }
+        currentDetailIds.add(fullStateId(adapter, stateId));
         await writeState(
             adapter,
             stateId,
@@ -181,17 +221,21 @@ export async function publishSnapshot(adapter: StateAdapter, printer: PrinterCon
         );
     }
 
-    for (const id of knownStates) {
-        if (id.startsWith(`${printer.id}.details.`) && !currentDetailIds.has(id)) {
-            await adapter.setStateAsync(id, { val: null, ack: true });
+    for (const state of await adapter.getStatesOfAsync(printer.id, 'details')) {
+        if (!currentDetailIds.has(fullStateId(adapter, state._id))) {
+            await adapter.setStateAsync(localStateId(adapter, state._id), { val: null, ack: true });
         }
     }
 }
 
 export async function markOffline(adapter: StateAdapter, printer: PrinterConfig): Promise<void> {
-    await adapter.setStateAsync(`${printer.id}.status.online`, { val: false, ack: true });
+    await writeState(
+        adapter,
+        `${printer.id}.status.online`,
+        { name: 'Online', type: 'boolean', role: 'indicator', read: true, write: false },
+        false,
+    );
     const stateId = `${printer.id}.status.state`;
-    const knownStates = getPrinterStates(adapter, printer.id);
     const stateLabels = { 0: 'off', 3: 'idle', 4: 'printing', 5: 'stopped' };
     await writeState(
         adapter,
@@ -207,5 +251,4 @@ export async function markOffline(adapter: StateAdapter, printer: PrinterConfig)
         0,
     );
     await adapter.extendObjectAsync(stateId, { common: { states: stateLabels } });
-    knownStates.add(stateId);
 }

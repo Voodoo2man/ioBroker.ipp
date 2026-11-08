@@ -1,22 +1,6 @@
 {
     "Basic configuration": "Основні налаштування",
     "Printer configuration": "Налаштування принтерів",
-    "Add printer": "Додати принтер",
-    "Edit printer": "Змінити принтер",
-    "Edit printer configuration": "Змінити налаштування принтера",
-    "Remove printer": "Видалити принтер",
-    "Remove this printer?": "Видалити цей принтер?",
-    "Online": "У мережі",
-    "Model": "Модель",
-    "ipp adapter settings": "Налаштування адаптера ipp",
-    "Printers": "Принтери",
-    "ID": "Ідентифікатор",
-    "Label": "Назва",
-    "Host": "Хост",
-    "Port": "Порт",
-    "IPP resource path": "Шлях ресурсу IPP",
-    "Use TLS": "Використовувати TLS",
-    "Verify TLS certificate": "Перевіряти сертифікат TLS",
     "Polling interval (seconds)": "Інтервал опитування (секунди)",
     "Request timeout (milliseconds)": "Час очікування запиту (мілісекунди)"
 }

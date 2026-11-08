@@ -1,20 +1,26 @@
 import { expect } from 'chai';
-import { markOffline, publishSnapshot } from './printerState';
+import { markOffline, publishSnapshot } from '../../src/lib/printerState';
 
-function makeAdapter(): {
+function makeAdapter(storage = { states: new Map<string, unknown>(), objects: new Map<string, unknown>() }): {
     states: Map<string, unknown>;
     objects: Map<string, unknown>;
+    namespace: string;
     setObjectNotExistsAsync: (id: string, object: unknown) => Promise<void>;
+    getObjectAsync: (id: string) => Promise<ioBroker.Object | null | undefined>;
+    setObjectAsync: (id: string, object: unknown) => Promise<void>;
     extendObjectAsync: (id: string, object: unknown) => Promise<void>;
     setStateAsync: (id: string, state: unknown) => Promise<void>;
+    getStatesOfAsync: (parentDevice: string, parentChannel?: string) => Promise<ioBroker.StateObject[]>;
 } {
-    const states = new Map<string, unknown>();
-    const objects = new Map<string, unknown>();
+    const { states, objects } = storage;
     return {
         states,
         objects,
+        namespace: 'ipp.0',
         setObjectNotExistsAsync: (id: string, object: unknown) =>
-            Promise.resolve(objects.set(id, object)).then(() => undefined),
+            Promise.resolve(objects.has(id) ? undefined : objects.set(id, object)).then(() => undefined),
+        getObjectAsync: id => Promise.resolve((objects.get(id) as ioBroker.Object | undefined) ?? null),
+        setObjectAsync: (id, object) => Promise.resolve(objects.set(id, object)).then(() => undefined),
         extendObjectAsync: (id: string, object: unknown) => {
             const existing = objects.get(id) as { common?: { states?: Record<number, string> } } | undefined;
             const extension = object as { common: { states: Record<number, string> } };
@@ -25,10 +31,31 @@ function makeAdapter(): {
             return Promise.resolve();
         },
         setStateAsync: (id: string, state: unknown) => Promise.resolve(states.set(id, state)).then(() => undefined),
+        getStatesOfAsync: (parentDevice: string, parentChannel?: string) =>
+            Promise.resolve(
+                [...objects.keys()]
+                    .filter(id => id.startsWith(`${parentDevice}.${parentChannel ?? ''}.`))
+                    .map(
+                        _id => ({ _id: `ipp.0.${_id}`, type: 'state', common: {}, native: {} }) as ioBroker.StateObject,
+                    ),
+            ),
     };
 }
 
 describe('printerState', () => {
+    it('creates the online state object before marking an uninitialized printer offline', async () => {
+        const adapter = makeAdapter();
+
+        await markOffline(adapter, { id: 'office' });
+
+        expect(adapter.objects.get('office.status.online')).to.deep.equal({
+            type: 'state',
+            common: { name: 'Online', type: 'boolean', role: 'indicator', read: true, write: false },
+            native: {},
+        });
+        expect(adapter.states.get('office.status.online')).to.deep.equal({ val: false, ack: true });
+    });
+
     it('publishes status and supply values as acknowledged states', async () => {
         const adapter = makeAdapter();
         await publishSnapshot(
@@ -82,6 +109,60 @@ describe('printerState', () => {
         expect(adapter.states.get('office.counters.pages_completed')).to.deep.equal({ val: null, ack: true });
         expect(adapter.states.get('office.supplies.0_black_toner')).to.deep.equal({ val: 70, ack: true });
         expect(adapter.states.get('office.details.printer_location')).to.deep.equal({ val: null, ack: true });
+    });
+
+    it('clears missing counters and details after a restart using stored state objects', async () => {
+        const firstRun = makeAdapter();
+        await publishSnapshot(
+            firstRun,
+            { id: 'office' },
+            {
+                online: true,
+                counters: { pagesCompleted: 10 },
+                details: [{ id: 'printer_location', name: 'Printer location', value: 'Office' }],
+            },
+        );
+
+        const restarted = makeAdapter({ states: firstRun.states, objects: firstRun.objects });
+        await publishSnapshot(restarted, { id: 'office' }, { online: true, counters: {}, details: [] });
+
+        expect(firstRun.states.get('office.counters.pages_completed')).to.deep.equal({ val: null, ack: true });
+        expect(firstRun.states.get('office.details.printer_location')).to.deep.equal({ val: null, ack: true });
+    });
+
+    it('updates detail metadata when a printer changes an attribute type', async () => {
+        const adapter = makeAdapter();
+        const printer = { id: 'office' };
+        await publishSnapshot(adapter, printer, {
+            online: true,
+            details: [{ id: 'queued_job_count', name: 'Queued jobs', value: 3 }],
+        });
+        const acl: ioBroker.StateACL = {
+            owner: 'system.user.admin',
+            ownerGroup: 'system.group.administrator',
+            object: 0o660,
+            state: 0o660,
+        };
+        const existingObject = adapter.objects.get('office.details.queued_job_count') as ioBroker.StateObject;
+        adapter.objects.set('office.details.queued_job_count', { ...existingObject, acl });
+
+        await publishSnapshot(adapter, printer, {
+            online: true,
+            details: [{ id: 'queued_job_count', name: 'Queued jobs', value: 'unavailable' }],
+        });
+
+        expect(adapter.objects.get('office.details.queued_job_count')).to.include({
+            type: 'state',
+        });
+        expect((adapter.objects.get('office.details.queued_job_count') as ioBroker.StateObject).common).to.include({
+            type: 'string',
+            role: 'text',
+        });
+        expect(
+            (adapter.objects.get('office.details.queued_job_count') as ioBroker.StateObject).common,
+        ).to.not.have.property('unit');
+        expect((adapter.objects.get('office.details.queued_job_count') as ioBroker.StateObject).acl).to.deep.equal(acl);
+        expect(adapter.states.get('office.details.queued_job_count')).to.deep.equal({ val: 'unavailable', ack: true });
     });
 
     it('keeps the last known readings when the printer goes offline', async () => {

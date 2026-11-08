@@ -6,16 +6,16 @@
     "news": {
       "0.1.1": {
         "en": "Kept the last toner readings when printers temporarily omit supply data.",
-        "de": "Hat die letzten Tonerwerte beibehalten, wenn Drucker leer sind.",
-        "ru": "Сохраняет последние показания тонера, когда принтеры временно пропускают данные о питании.",
-        "pt": "Manteve as últimas leituras de toner quando as impressoras omitiram.",
-        "nl": "De laatste tonerwaarden zijn bijgehouden wanneer printers tijdelijk voedingsgegevens weglaten.",
-        "fr": "J'ai gardé les derniers relevés de toner lorsque les imprimantes omettaient.",
-        "it": "Ha tenuto gli ultimi dati del toner se le stampanti omettono i dati.",
-        "es": "Guardó las últimas lecturas de tóner cuando las impresoras omiten",
-        "pl": "Zachował ostatnie odczyty tonera, gdy drukarki tymczasowo pomijają dane dotyczące zasilania.",
-        "uk": "Зберігаються останні показання тонера, коли принтери тимчасово опускають дані про постачання.",
-        "zh-cn": "当打印机暂时省略供应数据时，保留最新的碳粉读数。"
+        "de": "Die letzten Tonerstände wurden beibehalten, wenn Drucker vorübergehend keine Verbrauchsmaterialdaten liefern.",
+        "ru": "Сохранены последние показания тонера, когда принтеры временно не передают данные о расходных материалах.",
+        "pt": "Foram mantidas as últimas leituras de toner quando as impressoras omitem temporariamente os dados dos consumíveis.",
+        "nl": "De laatste tonerstanden zijn behouden wanneer printers tijdelijk geen gegevens over verbruiksartikelen doorgeven.",
+        "fr": "Les derniers relevés de toner ont été conservés lorsque les imprimantes omettent temporairement les données des consommables.",
+        "it": "Sono state mantenute le ultime letture del toner quando le stampanti omettono temporaneamente i dati sui materiali di consumo.",
+        "es": "Se conservaron las últimas lecturas de tóner cuando las impresoras omiten temporalmente los datos de los consumibles.",
+        "pl": "Zachowano ostatnie odczyty tonera, gdy drukarki tymczasowo nie przekazują danych o materiałach eksploatacyjnych.",
+        "uk": "Збережено останні показники тонера, коли принтери тимчасово не передають дані про витратні матеріали.",
+        "zh-cn": "当打印机暂时未提供耗材数据时，保留了最新的碳粉读数。"
       },
       "0.1.0": {
         "en": "Replaced the printer list with Device Manager configuration and split basic settings into a separate tab.",

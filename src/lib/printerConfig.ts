@@ -1,4 +1,5 @@
 import type { PrinterEndpoint } from './printerIpp';
+import { isValidIppBasePath, isValidPrinterHost } from './printerEndpoint';
 
 export interface PrinterConfig extends PrinterEndpoint {
     id: string;
@@ -8,6 +9,10 @@ export interface PrinterConfig extends PrinterEndpoint {
 export interface PrinterConfigResult {
     config?: PrinterConfig;
     errors: string[];
+}
+
+export interface PrinterConfigParseOptions {
+    allowLegacyInfoId?: boolean;
 }
 
 function normalizeCheckbox(value: unknown): boolean | undefined | null {
@@ -31,8 +36,16 @@ function normalizePrinterId(value: string): string {
         .replace(/ß/g, 'ss');
 }
 
-export function parsePrinterConfig(value: unknown, previousId?: string): PrinterConfigResult {
-    const errors = getPrinterConfigErrors(value);
+export function getPrinterIdKey(value: string): string {
+    return normalizePrinterId(value).toLowerCase();
+}
+
+export function parsePrinterConfig(
+    value: unknown,
+    previousId?: string,
+    options: PrinterConfigParseOptions = {},
+): PrinterConfigResult {
+    const errors = getPrinterConfigErrors(value, options.allowLegacyInfoId === true);
     if (!value || typeof value !== 'object' || Array.isArray(value) || errors.length > 0) {
         return { errors };
     }
@@ -50,18 +63,19 @@ export function parsePrinterConfig(value: unknown, previousId?: string): Printer
         return { errors };
     }
 
-    const id = normalizePrinterId(printer.id as string);
-    if (previousId && id !== previousId) {
+    const normalizedId = normalizePrinterId(printer.id as string);
+    if (previousId && getPrinterIdKey(normalizedId) !== getPrinterIdKey(previousId)) {
         errors.push('id cannot be changed after creation');
         return { errors };
     }
+    const id = previousId ?? normalizedId;
 
     return {
         config: {
             id,
             label: typeof printer.label === 'string' ? printer.label : undefined,
             host: printer.host as string,
-            port: printer.port as number | string | undefined,
+            port: printer.port === '' ? 631 : ((printer.port as number | undefined) ?? 631),
             basePath: printer.basePath as string | undefined,
             ssl,
             verifySsl,
@@ -70,19 +84,19 @@ export function parsePrinterConfig(value: unknown, previousId?: string): Printer
     };
 }
 
-export function getUniquePrinterConfigs(values: unknown[]): PrinterConfig[] {
+export function getUniquePrinterConfigs(values: unknown[], options: PrinterConfigParseOptions = {}): PrinterConfig[] {
     const ids = new Set<string>();
     return values.flatMap(value => {
-        const parsed = parsePrinterConfig(value);
-        if (!parsed.config || ids.has(parsed.config.id)) {
+        const parsed = parsePrinterConfig(value, undefined, options);
+        if (!parsed.config || ids.has(getPrinterIdKey(parsed.config.id))) {
             return [];
         }
-        ids.add(parsed.config.id);
+        ids.add(getPrinterIdKey(parsed.config.id));
         return [parsed.config];
     });
 }
 
-export function getPrinterConfigErrors(value: unknown): string[] {
+export function getPrinterConfigErrors(value: unknown, allowLegacyInfoId = false): string[] {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return ['row must be an object'];
     }
@@ -92,9 +106,13 @@ export function getPrinterConfigErrors(value: unknown): string[] {
 
     if (typeof printer.id !== 'string' || !/^[A-Za-z0-9_-]{1,32}$/.test(normalizePrinterId(printer.id))) {
         errors.push('id must contain 1-32 letters, digits, underscores, or hyphens');
+    } else if (getPrinterIdKey(printer.id) === 'info' && !allowLegacyInfoId) {
+        errors.push('id is reserved by the adapter');
     }
     if (typeof printer.host !== 'string' || printer.host.trim() === '') {
         errors.push('host is missing or is not text');
+    } else if (!isValidPrinterHost(printer.host)) {
+        errors.push('host must be a valid hostname or IP address');
     }
     if (
         printer.port !== undefined &&
@@ -103,11 +121,8 @@ export function getPrinterConfigErrors(value: unknown): string[] {
     ) {
         errors.push('port must be an integer from 1 to 65535');
     }
-    if (
-        printer.basePath !== undefined &&
-        (typeof printer.basePath !== 'string' || !printer.basePath.startsWith('/') || printer.basePath.includes('..'))
-    ) {
-        errors.push('basePath must start with / and must not contain ..');
+    if (printer.basePath !== undefined && !isValidIppBasePath(printer.basePath)) {
+        errors.push('basePath must be an absolute path without .., query, fragment, whitespace, or backslash');
     }
     for (const key of ['ssl', 'verifySsl']) {
         if (normalizeCheckbox(printer[key]) === null) {
