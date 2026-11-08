@@ -584,15 +584,21 @@ class Ipp extends Adapter {
         const controller = new AbortController();
         this.activeRequests.add(controller);
         try {
-            const result = await pollPrinter({
-                host: printer.host.trim(),
-                port: boundedNumber(printer.port, 631, 1, 65535),
-                basePath: printer.basePath || '/ipp/print',
-                ssl: printer.ssl === true,
-                verifySsl: printer.verifySsl === true,
-                timeoutMs: this.timeoutMs,
-                signal: controller.signal,
-            });
+            const result = await pollPrinter(
+                {
+                    host: printer.host.trim(),
+                    port: boundedNumber(printer.port, 631, 1, 65535),
+                    basePath: printer.basePath || '/ipp/print',
+                    ssl: printer.ssl === true,
+                    verifySsl: printer.verifySsl === true,
+                    timeoutMs: this.timeoutMs,
+                    signal: controller.signal,
+                },
+                {
+                    setTimeout: (callback, timeout) => this.setTimeout(callback, timeout),
+                    clearTimeout: timer => this.clearTimeout(timer),
+                },
+            );
             if (this.isCurrentPoll(printer, revision)) {
                 await publishSnapshot(this, printer, result);
             }

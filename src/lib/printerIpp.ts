@@ -185,6 +185,11 @@ export interface PrinterEndpoint {
     signal?: AbortSignal;
 }
 
+export interface PrinterRequestTimer {
+    setTimeout(callback: () => void, timeout: number): ioBroker.Timeout | undefined;
+    clearTimeout(timeout: ioBroker.Timeout | undefined): void;
+}
+
 export interface PrinterSupply {
     description: string;
     level: number;
@@ -371,6 +376,7 @@ function sendRequest(
     uri: string,
     timeoutMs: number,
     verifySsl: boolean,
+    timer: PrinterRequestTimer,
     signal?: AbortSignal,
 ): Promise<ipp.IppResponse> {
     return new Promise((resolve, reject) => {
@@ -382,7 +388,7 @@ function sendRequest(
         let settled = false;
         const controls: {
             request?: http.ClientRequest;
-            deadline?: NodeJS.Timeout;
+            deadline?: ioBroker.Timeout;
             onAbort?: () => void;
         } = {};
         const finish = (error?: Error, parsed?: ipp.IppResponse): void => {
@@ -390,7 +396,7 @@ function sendRequest(
                 return;
             }
             settled = true;
-            clearTimeout(controls.deadline);
+            timer.clearTimeout(controls.deadline);
             if (controls.onAbort) {
                 signal?.removeEventListener('abort', controls.onAbort);
             }
@@ -474,7 +480,7 @@ function sendRequest(
             },
         );
         controls.request = request;
-        const deadline = setTimeout(() => {
+        const deadline = timer.setTimeout(() => {
             const error = timeoutError();
             request.destroy(error);
             finish(error);
@@ -503,15 +509,18 @@ function sendRequest(
     });
 }
 
-export async function pollPrinter({
-    host,
-    port = 631,
-    basePath = '/ipp/print',
-    ssl = false,
-    verifySsl = false,
-    timeoutMs = 5000,
-    signal,
-}: PrinterEndpoint): Promise<PrinterSnapshot> {
+export async function pollPrinter(
+    {
+        host,
+        port = 631,
+        basePath = '/ipp/print',
+        ssl = false,
+        verifySsl = false,
+        timeoutMs = 5000,
+        signal,
+    }: PrinterEndpoint,
+    timer: PrinterRequestTimer,
+): Promise<PrinterSnapshot> {
     const numericPort = Number(port);
     if (!isValidPrinterHost(host)) {
         throw new TypeError('A valid printer host is required');
@@ -529,5 +538,5 @@ export async function pollPrinter({
     }
     const endpoint = new URL(`${ssl ? 'https:' : 'http:'}//${host.trim()}:${numericPort}${basePath}`);
     const uri = `${ssl ? 'ipps:' : 'ipp:'}//${endpoint.host}${endpoint.pathname}`;
-    return normalizeSnapshot(await sendRequest(endpoint, uri, timeoutMs, verifySsl, signal));
+    return normalizeSnapshot(await sendRequest(endpoint, uri, timeoutMs, verifySsl, timer, signal));
 }

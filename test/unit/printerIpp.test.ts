@@ -4,6 +4,16 @@ import { expect } from 'chai';
 import * as ipp from '@sealsystems/ipp';
 import { isPrinterUnavailableError, normalizeSnapshot, pollPrinter } from '../../src/lib/printerIpp';
 
+const requestTimer = {
+    setTimeout: (callback: () => void, timeout: number): ioBroker.Timeout | undefined =>
+        setTimeout(callback, timeout) as unknown as ioBroker.Timeout,
+    clearTimeout: (timer: ioBroker.Timeout | undefined): void => clearTimeout(timer as unknown as NodeJS.Timeout),
+};
+
+function pollPrinterWithNodeTimer(endpoint: Parameters<typeof pollPrinter>[0]): ReturnType<typeof pollPrinter> {
+    return pollPrinter(endpoint, requestTimer);
+}
+
 function ippResponse(attributes: Record<string, unknown>): Buffer {
     return ipp.serialize({ version: '2.0', statusCode: 'successful-ok', id: 1, 'printer-attributes-tag': attributes });
 }
@@ -183,6 +193,18 @@ describe('printerIpp', () => {
         const requestReceived = new Promise<ipp.IppResponse>(resolve => {
             resolveRequest = resolve;
         });
+        let deadlineScheduled = false;
+        let deadlineCleared = false;
+        const trackedTimer = {
+            setTimeout: (callback: () => void, timeout: number) => {
+                deadlineScheduled = true;
+                return requestTimer.setTimeout(callback, timeout);
+            },
+            clearTimeout: (timer: ioBroker.Timeout | undefined) => {
+                deadlineCleared = true;
+                requestTimer.clearTimeout(timer);
+            },
+        };
         const server = http.createServer((request, response) => {
             const chunks: Buffer[] = [];
             request.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -208,13 +230,18 @@ describe('printerIpp', () => {
             if (!address || typeof address === 'string') {
                 throw new Error('Test server did not bind to a TCP port');
             }
-            const result = await pollPrinter({
-                host: '127.0.0.1',
-                port: address.port,
-                basePath: '/ipp/print',
-                timeoutMs: 2000,
-            });
+            const result = await pollPrinter(
+                {
+                    host: '127.0.0.1',
+                    port: address.port,
+                    basePath: '/ipp/print',
+                    timeoutMs: 2000,
+                },
+                trackedTimer,
+            );
             const receivedRequest = await requestReceived;
+            expect(deadlineScheduled).to.equal(true);
+            expect(deadlineCleared).to.equal(true);
             expect(receivedRequest.operation).to.equal('Get-Printer-Attributes');
             expect(
                 (receivedRequest['operation-attributes-tag'] as Record<string, unknown>)['requested-attributes'],
@@ -250,14 +277,17 @@ describe('printerIpp', () => {
             if (!address || typeof address === 'string') {
                 throw new Error('Test server did not bind to a TCP port');
             }
-            await expectRejection(pollPrinter({ host: '127.0.0.1', port: address.port, timeoutMs: 2000 }), Error);
-            await expectRejection(pollPrinter({ host: 'printer/path', port: address.port }), TypeError);
             await expectRejection(
-                pollPrinter({ host: '127.0.0.1', port: address.port, basePath: '/ipp/print?x' }),
+                pollPrinterWithNodeTimer({ host: '127.0.0.1', port: address.port, timeoutMs: 2000 }),
+                Error,
+            );
+            await expectRejection(pollPrinterWithNodeTimer({ host: 'printer/path', port: address.port }), TypeError);
+            await expectRejection(
+                pollPrinterWithNodeTimer({ host: '127.0.0.1', port: address.port, basePath: '/ipp/print?x' }),
                 TypeError,
             );
             await expectRejection(
-                pollPrinter({ host: '127.0.0.1', port: address.port, basePath: '/ipp print' }),
+                pollPrinterWithNodeTimer({ host: '127.0.0.1', port: address.port, basePath: '/ipp print' }),
                 TypeError,
             );
         } finally {
@@ -288,7 +318,10 @@ describe('printerIpp', () => {
             if (!address || typeof address === 'string') {
                 throw new Error('Test server did not bind to a TCP port');
             }
-            await expectRejection(pollPrinter({ host: '127.0.0.1', port: address.port, timeoutMs: 500 }), Error);
+            await expectRejection(
+                pollPrinterWithNodeTimer({ host: '127.0.0.1', port: address.port, timeoutMs: 500 }),
+                Error,
+            );
         } finally {
             await new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
         }
@@ -310,7 +343,10 @@ describe('printerIpp', () => {
                 throw new Error('Test server did not bind to a TCP port');
             }
             const started = Date.now();
-            await expectRejection(pollPrinter({ host: '127.0.0.1', port: address.port, timeoutMs: 500 }), Error);
+            await expectRejection(
+                pollPrinterWithNodeTimer({ host: '127.0.0.1', port: address.port, timeoutMs: 500 }),
+                Error,
+            );
             expect(Date.now() - started).to.be.lessThan(900);
         } finally {
             await new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
@@ -342,7 +378,7 @@ describe('printerIpp', () => {
             if (!address || typeof address === 'string') {
                 throw new Error('Test server did not bind to a TCP port');
             }
-            const poll = pollPrinter({
+            const poll = pollPrinterWithNodeTimer({
                 host: '127.0.0.1',
                 port: address.port,
                 timeoutMs: 2000,
