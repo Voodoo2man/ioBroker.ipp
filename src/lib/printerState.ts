@@ -84,7 +84,7 @@ function validSupply(supply: PrinterSupply): boolean {
 }
 
 function supplyStateId(printerId: string, supply: PrinterSupply, index: number): string {
-    const slug = supply.description
+    const slug = (supply.sourceName ?? supply.description)
         .trim()
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '_')

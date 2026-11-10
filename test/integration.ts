@@ -27,7 +27,7 @@ tests.integration(path.resolve(__dirname, '../..'), {
                 await harness.changeAdapterConfig('ipp', {
                     native: {
                         printers: [
-                            { id: 'info', host: '127.0.0.1', port: 1 },
+                            { id: 'info', label: 'Legacy printer', host: '127.0.0.1', port: 1 },
                             { id: 'Printer', host: '127.0.0.1', port: 1 },
                             { id: 'printer', host: '127.0.0.1', port: 1 },
                         ],
@@ -47,6 +47,7 @@ tests.integration(path.resolve(__dirname, '../..'), {
                 await printerOffline;
                 expect(await harness.objects.getObject('ipp.0.printer')).to.not.exist;
                 expect(await harness.objects.getObject('ipp.0.printer.status')).to.not.exist;
+                expect((await harness.objects.getObject('ipp.0.info'))?.common.name).to.equal('Legacy printer');
 
                 const storage = await harness.objects.getObject('ipp.0.info.printerConfig');
                 expect(storage?.type).to.equal('meta');
@@ -67,7 +68,7 @@ tests.integration(path.resolve(__dirname, '../..'), {
                     );
                 });
                 expect(JSON.parse(storedConfig.toString())).to.deep.equal([
-                    { id: 'info', host: '127.0.0.1', port: 1 },
+                    { id: 'info', label: 'Legacy printer', host: '127.0.0.1', port: 1 },
                     { id: 'Printer', host: '127.0.0.1', port: 1 },
                 ]);
             });

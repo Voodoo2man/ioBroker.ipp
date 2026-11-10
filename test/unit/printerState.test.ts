@@ -67,7 +67,16 @@ describe('printerState', () => {
                 printerState: 4,
                 model: 'HP Printer',
                 counters: { pagesCompleted: 100, impressionsCompleted: null, mediaSheetsCompleted: null },
-                supplies: [{ description: 'Black toner', level: 70, maxLevel: 100, unit: 14, markerType: 'toner' }],
+                supplies: [
+                    {
+                        description: 'Black toner',
+                        sourceName: 'Schwarze Patrone',
+                        level: 70,
+                        maxLevel: 100,
+                        unit: 14,
+                        markerType: 'toner',
+                    },
+                ],
                 details: [
                     { id: 'printer_location', name: 'Printer location', value: 'Office' },
                     { id: 'queued_job_count', name: 'Queued jobs', value: 2 },
@@ -79,7 +88,10 @@ describe('printerState', () => {
         expect(adapter.states.get('office.status.state')).to.deep.equal({ val: 4, ack: true });
         expect(adapter.states.get('office.status.model')).to.deep.equal({ val: 'HP Printer', ack: true });
         expect(adapter.states.get('office.counters.pages_completed')).to.deep.equal({ val: 100, ack: true });
-        expect(adapter.states.get('office.supplies.0_black_toner')).to.deep.equal({ val: 70, ack: true });
+        expect(adapter.states.get('office.supplies.0_schwarze_patrone')).to.deep.equal({ val: 70, ack: true });
+        expect(
+            (adapter.objects.get('office.supplies.0_schwarze_patrone') as ioBroker.StateObject).common.name,
+        ).to.equal('Black toner');
         expect(adapter.states.get('office.details.printer_location')).to.deep.equal({ val: 'Office', ack: true });
         expect(adapter.states.get('office.details.queued_job_count')).to.deep.equal({ val: 2, ack: true });
     });

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import http from 'node:http';
 import https from 'node:https';
 import { join } from 'node:path';
@@ -6,6 +7,8 @@ import * as ipp from '@sealsystems/ipp';
 import { isValidIppBasePath, isValidPrinterHost } from './printerEndpoint';
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
+const MIN_TIMEOUT_MS = 500;
+const MAX_TIMEOUT_MS = 30000;
 const PRINTER_UNAVAILABLE_CODES = new Set([
     'ECONNABORTED',
     'ECONNREFUSED',
@@ -34,6 +37,8 @@ const DETAIL_ATTRIBUTES = [
     ['pages-per-minute-color', 'Color pages per minute'],
     ['uri-authentication-supported', 'Supported URI authentication'],
     ['uri-security-supported', 'Supported URI security'],
+    ['hp-default-duplex-standard', 'HP default duplex standard'],
+    ['manual-duplex-supported', 'Manual duplex supported'],
 ] as const;
 const EXCLUDED_ATTRIBUTES = new Set([
     'charset-configured',
@@ -168,6 +173,62 @@ const DEDICATED_STATE_ATTRIBUTES = new Set([
     'impressions-completed',
     'media-sheets-completed',
 ]);
+const PRINTER_STATE_LABELS = new Map([
+    [3, 'Idle'],
+    [4, 'Printing'],
+    [5, 'Stopped'],
+]);
+const PRINTER_STATE_REASON_LABELS = new Map([
+    ['cover-open', 'Cover open'],
+    ['door-open', 'Door open'],
+    ['input-tray-missing', 'Input tray missing'],
+    ['marker-supply-empty', 'Supply empty'],
+    ['marker-supply-low', 'Supply low'],
+    ['media-empty', 'Media empty'],
+    ['media-empty-error', 'Media empty'],
+    ['media-jam', 'Paper jam'],
+    ['media-jam-error', 'Paper jam'],
+    ['media-needed', 'Load media'],
+    ['offline', 'Offline'],
+    ['output-area-full', 'Output area full'],
+    ['output-tray-missing', 'Output tray missing'],
+    ['paused', 'Paused'],
+    ['shutdown', 'Shut down'],
+    ['spool-area-full', 'Spool area full'],
+    ['toner-empty', 'Toner empty'],
+    ['toner-empty-error', 'Toner empty'],
+    ['toner-low', 'Toner low'],
+    ['toner-low-warning', 'Toner low'],
+]);
+const MARKER_COLORS = new Set([
+    'black',
+    'blue',
+    'brown',
+    'cyan',
+    'dark-yellow',
+    'gold',
+    'gray',
+    'green',
+    'light-cyan',
+    'light-gray',
+    'light-magenta',
+    'magenta',
+    'orange',
+    'pink',
+    'red',
+    'silver',
+    'white',
+    'yellow',
+]);
+const MARKER_TYPE_LABELS = new Map([
+    ['ink', 'Ink'],
+    ['ink-cartridge', 'Ink cartridge'],
+    ['toner', 'Toner'],
+    ['toner-cartridge', 'Toner cartridge'],
+    ['waste-ink-box', 'Waste ink box'],
+    ['waste-toner', 'Waste toner'],
+    ['waste-toner-box', 'Waste toner box'],
+]);
 const printerAttributes = ipp.attributes['Printer Description'];
 const documentAttributes = ipp.attributes['Document Description'];
 for (const name of ['pages-completed', 'impressions-completed', 'media-sheets-completed']) {
@@ -192,6 +253,7 @@ export interface PrinterRequestTimer {
 
 export interface PrinterSupply {
     description: string;
+    sourceName?: string;
     level: number;
     maxLevel: number;
     unit: number;
@@ -253,33 +315,57 @@ function normalizePrinterState(value: unknown): number | null {
     return null;
 }
 
+function normalizePrinterModel(value: unknown): string | null {
+    if (typeof value !== 'string') {
+        return null;
+    }
+    const modelTokens = value.trim().split(/\s+/).reverse();
+    return modelTokens.find(token => /^[A-Za-z][A-Za-z0-9-]*\d[A-Za-z0-9-]*$/.test(token)) ?? null;
+}
+
 function responseAttributes(response: ipp.IppResponse): Record<string, unknown> {
     const attributes = response['printer-attributes-tag'] ?? response['unsupported-attributes-tag'];
     return attributes && typeof attributes === 'object' ? (attributes as Record<string, unknown>) : {};
 }
 
-function detailValue(value: unknown): string | number | boolean | null {
-    if (typeof value === 'string' || typeof value === 'boolean') {
-        return value;
-    }
-    if (typeof value === 'number') {
-        return Number.isFinite(value) ? value : String(value);
-    }
-    if (value === null || value === undefined) {
-        return null;
-    }
-    try {
-        return JSON.stringify(value) ?? null;
-    } catch {
-        return '[unserializable]';
-    }
-}
-
 function detailId(attribute: string): string {
-    return attribute
+    const normalized = attribute
         .toLowerCase()
         .replace(/[^a-z0-9_]+/g, '_')
         .replace(/^_+|_+$/g, '');
+    if (/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(attribute)) {
+        return normalized;
+    }
+    const suffix = createHash('sha256').update(attribute).digest('hex');
+    return `${normalized || 'attribute'}__${suffix}`;
+}
+
+function statusMessage(state: number | null, reasons: string[]): string | null {
+    const reasonMessages = reasons.flatMap(reason => {
+        if (reason === 'none') {
+            return [];
+        }
+        const message = PRINTER_STATE_REASON_LABELS.get(reason);
+        return message ? [message] : [];
+    });
+    return reasonMessages.join(', ') || PRINTER_STATE_LABELS.get(state ?? -1) || null;
+}
+
+function supplyDescription(type: unknown, color: unknown, index: number): string {
+    const typeLabel = typeof type === 'string' ? MARKER_TYPE_LABELS.get(type) : undefined;
+    if (!typeLabel) {
+        return `Supply ${index + 1}`;
+    }
+    const colorLabel =
+        typeof color === 'string' && MARKER_COLORS.has(color)
+            ? color.replace(/-/g, ' ').replace(/\b[a-z]/g, letter => letter.toUpperCase())
+            : undefined;
+    return colorLabel ? `${colorLabel} ${typeLabel.toLowerCase()}` : typeLabel;
+}
+
+export function normalizeRequestTimeout(value: unknown, fallback: number): number {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.trunc(Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, number))) : fallback;
 }
 
 export function normalizeSnapshot(response: ipp.IppResponse): PrinterSnapshot {
@@ -287,20 +373,21 @@ export function normalizeSnapshot(response: ipp.IppResponse): PrinterSnapshot {
     const reasons = asArray(attributes['printer-state-reasons']).filter(
         (value): value is string => typeof value === 'string',
     );
-    const stateMessages = asArray(attributes['printer-state-message']).filter(
-        (value): value is string => typeof value === 'string',
-    );
     const markerNames = asArray(attributes['marker-names']);
     const markerLevels = asArray(attributes['marker-levels']);
     const markerTypes = asArray(attributes['marker-types']);
+    const markerColors = asArray(attributes['marker-colors']);
     const supplies = markerNames.flatMap((name, index): PrinterSupply[] => {
         const level = finiteNumber(markerLevels[index]);
         if (typeof name !== 'string' || name.trim() === '' || level === null || level < 0 || level > 100) {
             return [];
         }
+        const description = supplyDescription(markerTypes[index], markerColors[index], index);
+        const sourceName = name.trim();
         return [
             {
-                description: name.trim(),
+                description,
+                ...(sourceName !== description ? { sourceName } : {}),
                 level,
                 maxLevel: 100,
                 unit: 14,
@@ -309,7 +396,6 @@ export function normalizeSnapshot(response: ipp.IppResponse): PrinterSnapshot {
             },
         ];
     });
-    const detailIds = new Set<string>();
     const details = Object.entries(attributes)
         .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
         .flatMap(([attribute, rawValue]) => {
@@ -324,28 +410,26 @@ export function normalizeSnapshot(response: ipp.IppResponse): PrinterSnapshot {
             ) {
                 return [];
             }
-            const value = detailValue(rawValue);
+            const value =
+                typeof rawValue === 'boolean' || (typeof rawValue === 'number' && Number.isFinite(rawValue))
+                    ? rawValue
+                    : null;
             const baseId = detailId(attribute);
             if (!baseId || value === null) {
                 return [];
             }
 
-            let id = baseId;
-            let suffix = 2;
-            while (detailIds.has(id)) {
-                id = `${baseId}_${suffix++}`;
-            }
-            detailIds.add(id);
-
-            const name = DETAIL_NAMES.get(attribute) ?? attribute.replace(/-/g, ' ');
-            return [{ id, name, value }];
+            const name = DETAIL_NAMES.get(attribute) ?? 'Printer detail';
+            return [{ id: baseId, name, value }];
         });
+
+    const printerState = normalizePrinterState(attributes['printer-state']);
 
     return {
         online: true,
-        printerState: normalizePrinterState(attributes['printer-state']),
-        status: stateMessages[0] || reasons.join(', ') || null,
-        model: typeof attributes['printer-make-and-model'] === 'string' ? attributes['printer-make-and-model'] : null,
+        printerState,
+        status: statusMessage(printerState, reasons),
+        model: normalizePrinterModel(attributes['printer-make-and-model']),
         printerName: typeof attributes['printer-name'] === 'string' ? attributes['printer-name'] : null,
         supplies,
         counters: {
@@ -532,7 +616,7 @@ export async function pollPrinter(
             'IPP base path must be an absolute path without query, fragment, whitespace, backslash, or ..',
         );
     }
-    if (!Number.isInteger(timeoutMs) || timeoutMs < 500 || timeoutMs > 30000) {
+    if (!Number.isInteger(timeoutMs) || timeoutMs < MIN_TIMEOUT_MS || timeoutMs > MAX_TIMEOUT_MS) {
         throw new TypeError('timeoutMs must be an integer between 500 and 30000');
     }
     const endpoint = new URL(`${ssl ? 'https:' : 'http:'}//${host.trim()}:${numericPort}${basePath}`);

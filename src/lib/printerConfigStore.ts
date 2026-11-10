@@ -1,6 +1,7 @@
 import type {} from '@iobroker/adapter-core';
 
 const PRINTER_CONFIG_STORAGE_ID = 'info.printerConfig';
+const PRINTER_CONFIG_PARENT_ID = 'info';
 const PRINTER_CONFIG_FILE = 'printers.json';
 
 interface PrinterConfigStoreAdapter {
@@ -12,6 +13,11 @@ interface PrinterConfigStoreAdapter {
 }
 
 async function ensureStorage(adapter: PrinterConfigStoreAdapter): Promise<string> {
+    await adapter.setObjectNotExistsAsync(PRINTER_CONFIG_PARENT_ID, {
+        type: 'device',
+        common: { name: 'info' },
+        native: {},
+    });
     await adapter.setObjectNotExistsAsync(PRINTER_CONFIG_STORAGE_ID, {
         type: 'meta',
         common: { name: 'Printer configuration storage', type: 'meta.user' },

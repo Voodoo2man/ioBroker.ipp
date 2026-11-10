@@ -17,15 +17,13 @@ import {
 import { loadPrinterConfigurations, savePrinterConfigurations } from './lib/printerConfigStore';
 import { isValidIppBasePath, isValidPrinterHost } from './lib/printerEndpoint';
 import { SerialQueue } from './lib/serialQueue';
-import { isPrinterUnavailableError, pollPrinter } from './lib/printerIpp';
+import { isPrinterUnavailableError, normalizeRequestTimeout, pollPrinter } from './lib/printerIpp';
 import { markOffline, publishSnapshot } from './lib/printerState';
 
 const DEFAULT_INTERVAL_SECONDS = 60;
 const DEFAULT_TIMEOUT_MS = 5000;
 const MIN_INTERVAL_SECONDS = 10;
 const MAX_INTERVAL_SECONDS = 86400;
-const MIN_TIMEOUT_MS = 500;
-const MAX_TIMEOUT_MS = 30000;
 type CompleteTranslations = {
     en: string;
     de: string;
@@ -399,7 +397,7 @@ class Ipp extends Adapter {
                 MAX_INTERVAL_SECONDS,
             );
             this.pollIntervalMs = intervalSeconds * 1000;
-            this.timeoutMs = boundedNumber(this.config.timeoutMs, DEFAULT_TIMEOUT_MS, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS);
+            this.timeoutMs = normalizeRequestTimeout(this.config.timeoutMs, DEFAULT_TIMEOUT_MS);
             await this.pollAndSchedule();
         } catch (error) {
             this.rejectConfigReady(error);
@@ -421,6 +419,12 @@ class Ipp extends Adapter {
             common: { name: printer.label || printer.id },
             native: {},
         });
+        if (printer.id === 'info' && printer.label) {
+            const device = await this.getObjectAsync(printer.id);
+            if (device?.type === 'device' && device.common.name === 'info') {
+                await this.extendObjectAsync(printer.id, { common: { name: printer.label } });
+            }
+        }
         for (const [id, name] of [
             [channelId, 'Status'],
             [`${printer.id}.supplies`, 'Supplies'],

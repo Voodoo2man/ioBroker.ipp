@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import { getPrinterIdKey, parsePrinterConfig } from '../../src/lib/printerConfig';
 import { loadPrinterConfigurations, savePrinterConfigurations } from '../../src/lib/printerConfigStore';
 
 function makeAdapter(): {
@@ -33,6 +34,25 @@ function makeAdapter(): {
 }
 
 describe('printerConfigStore', () => {
+    it('creates a device parent before storage metadata and supports legacy info ID casing', async () => {
+        const adapter = makeAdapter();
+
+        await loadPrinterConfigurations(adapter, []);
+
+        expect([...adapter.objects.keys()]).to.deep.equal(['info', 'info.printerConfig']);
+        expect(adapter.objects.get('info')).to.deep.equal({ type: 'device', common: { name: 'info' }, native: {} });
+
+        const lowercase = parsePrinterConfig({ id: 'info', host: 'legacy.local' }, undefined, {
+            allowLegacyInfoId: true,
+        });
+        const uppercase = parsePrinterConfig({ id: 'INFO', host: 'legacy.local' }, undefined, {
+            allowLegacyInfoId: true,
+        });
+        expect(lowercase.errors).to.deep.equal([]);
+        expect(uppercase.errors).to.deep.equal([]);
+        expect(getPrinterIdKey(uppercase.config!.id)).to.equal(getPrinterIdKey(lowercase.config!.id));
+    });
+
     it('migrates native.printers once and ignores later stale native snapshots', async () => {
         const adapter = makeAdapter();
         const legacyPrinters = [{ id: 'info', host: 'legacy.local' }];
@@ -42,6 +62,7 @@ describe('printerConfigStore', () => {
             legacyPrinters,
         );
         expect([...adapter.objects.values()]).to.deep.equal([
+            { type: 'device', common: { name: 'info' }, native: {} },
             { type: 'meta', common: { name: 'Printer configuration storage', type: 'meta.user' }, native: {} },
         ]);
     });
