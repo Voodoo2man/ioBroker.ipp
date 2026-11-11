@@ -11,9 +11,35 @@ tests.integration(path.resolve(__dirname, '../..'), {
                 this.timeout(30000);
                 const harness = getHarness();
                 const storageId = 'ipp.0.info.printerConfig';
+                if (await harness.objects.fileExists('ipp.0', 'printer-config.json')) {
+                    await harness.objects.unlinkAsync('ipp.0', 'printer-config.json');
+                }
                 if (await harness.objects.fileExists(storageId, 'printers.json')) {
                     await harness.objects.unlinkAsync(storageId, 'printers.json');
                 }
+                await harness.objects.setObjectAsync('ipp.0.info', {
+                    type: 'device',
+                    common: { name: 'info' },
+                    native: {},
+                });
+                await harness.objects.setObjectAsync(storageId, {
+                    type: 'meta',
+                    common: { name: 'Printer configuration storage', type: 'meta.user' },
+                    native: {},
+                    from: 'system.adapter.ipp.0',
+                });
+                await new Promise<void>((resolve, reject) => {
+                    harness.objects.writeFile(
+                        storageId,
+                        'printers.json',
+                        JSON.stringify([
+                            { id: 'info', label: 'Legacy printer', host: '127.0.0.1', port: 1 },
+                            { id: 'Printer', host: '127.0.0.1', port: 1 },
+                            { id: 'printer', host: '127.0.0.1', port: 1 },
+                        ]),
+                        (error: NodeJS.ErrnoException | null) => (error ? reject(error) : resolve()),
+                    );
+                });
                 await harness.objects.setObjectAsync('ipp.0.printer', {
                     type: 'device',
                     common: { name: 'Stale duplicate printer' },
@@ -25,13 +51,7 @@ tests.integration(path.resolve(__dirname, '../..'), {
                     native: {},
                 });
                 await harness.changeAdapterConfig('ipp', {
-                    native: {
-                        printers: [
-                            { id: 'info', host: '127.0.0.1', port: 1 },
-                            { id: 'Printer', host: '127.0.0.1', port: 1 },
-                            { id: 'printer', host: '127.0.0.1', port: 1 },
-                        ],
-                    },
+                    native: { printers: [] },
                 });
 
                 const printerOffline = new Promise<void>((resolve, reject) => {
@@ -47,14 +67,15 @@ tests.integration(path.resolve(__dirname, '../..'), {
                 await printerOffline;
                 expect(await harness.objects.getObject('ipp.0.printer')).to.not.exist;
                 expect(await harness.objects.getObject('ipp.0.printer.status')).to.not.exist;
+                expect((await harness.objects.getObject('ipp.0.info'))?.common.name).to.equal('Legacy printer');
 
-                const storage = await harness.objects.getObject('ipp.0.info.printerConfig');
-                expect(storage?.type).to.equal('meta');
-                expect(storage?.common.type).to.equal('meta.user');
+                expect(await harness.objects.getObject(storageId)).to.not.exist;
+                expect(await harness.objects.fileExists(storageId, 'printers.json')).to.equal(false);
+                expect(await harness.objects.fileExists('ipp.0', 'printer-config.json')).to.equal(true);
                 const storedConfig = await new Promise<string | Buffer>((resolve, reject) => {
                     harness.objects.readFile(
-                        'ipp.0.info.printerConfig',
-                        'printers.json',
+                        'ipp.0',
+                        'printer-config.json',
                         (error: NodeJS.ErrnoException | null, data?: Buffer | string) => {
                             if (error) {
                                 reject(error);
@@ -67,7 +88,7 @@ tests.integration(path.resolve(__dirname, '../..'), {
                     );
                 });
                 expect(JSON.parse(storedConfig.toString())).to.deep.equal([
-                    { id: 'info', host: '127.0.0.1', port: 1 },
+                    { id: 'info', label: 'Legacy printer', host: '127.0.0.1', port: 1 },
                     { id: 'Printer', host: '127.0.0.1', port: 1 },
                 ]);
             });

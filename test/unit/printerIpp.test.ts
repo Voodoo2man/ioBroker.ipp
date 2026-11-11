@@ -2,7 +2,12 @@ import http from 'node:http';
 import { spawnSync } from 'node:child_process';
 import { expect } from 'chai';
 import * as ipp from '@sealsystems/ipp';
-import { isPrinterUnavailableError, normalizeSnapshot, pollPrinter } from '../../src/lib/printerIpp';
+import {
+    isPrinterUnavailableError,
+    normalizeRequestTimeout,
+    normalizeSnapshot,
+    pollPrinter,
+} from '../../src/lib/printerIpp';
 
 const requestTimer = {
     schedule: (callback: () => void, timeout: number): ioBroker.Timeout | undefined =>
@@ -49,6 +54,36 @@ describe('printerIpp', () => {
         expect(isPrinterUnavailableError(new Error('Printer returned an unsuccessful IPP response'))).to.equal(false);
     });
 
+    it('classifies an HTTP 502 response as a temporarily unavailable printer', async () => {
+        const server = http.createServer((request, response) => {
+            request.resume();
+            request.on('end', () => {
+                response.writeHead(502);
+                response.end();
+            });
+        });
+        await new Promise<void>(resolve => server.listen(0, resolve));
+
+        try {
+            const address = server.address();
+            if (!address || typeof address === 'string') {
+                throw new Error('Test server did not bind to a TCP port');
+            }
+
+            let caught: unknown;
+            try {
+                await pollPrinterWithNodeTimer({ host: '127.0.0.1', port: address.port, timeoutMs: 2000 });
+            } catch (error) {
+                caught = error;
+            }
+
+            expect(caught).to.be.instanceOf(Error);
+            expect(isPrinterUnavailableError(caught)).to.equal(true);
+        } finally {
+            await new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
+        }
+    });
+
     it('normalizes printer state, percentage markers, and available counters', () => {
         const snapshot = normalizeSnapshot({
             statusCode: 'successful-ok',
@@ -58,6 +93,7 @@ describe('printerIpp', () => {
                 'printer-make-and-model': 'HP LaserJet Pro MFP M479fdn',
                 'marker-names': ['Black toner'],
                 'marker-levels': [1],
+                'marker-colors': ['black'],
                 'marker-high-levels': [3],
                 'marker-low-levels': [0],
                 'marker-types': ['toner'],
@@ -86,7 +122,6 @@ describe('printerIpp', () => {
             mediaSheetsCompleted: 118,
         });
         expect(snapshot.details).to.deep.include.members([
-            { id: 'printer_location', name: 'Printer location', value: 'Office' },
             { id: 'printer_is_accepting_jobs', name: 'Accepting jobs', value: true },
             { id: 'queued_job_count', name: 'Queued jobs', value: 2 },
         ]);
@@ -101,12 +136,13 @@ describe('printerIpp', () => {
         expect(snapshot.details.some(detail => detail.id === 'document_format_supported')).to.equal(false);
     });
 
-    it('publishes unknown returned attributes but omits excluded capabilities', () => {
+    it('publishes scalar attributes but omits arrays, objects, and excluded capabilities', () => {
         const snapshot = normalizeSnapshot({
             statusCode: 'successful-ok',
             'printer-attributes-tag': {
                 'printer-state': 'idle',
                 'printer-alert': ['toner-low', 'cover-open'],
+                'printer-info': 'Office printer',
                 'color-supported': true,
                 'marker-levels': [70, 45],
                 'pages-per-minute': 25,
@@ -114,41 +150,152 @@ describe('printerIpp', () => {
                 'manual-duplex-supported': true,
                 'printer-get-attributes-supported': ['printer-name', 'printer-state'],
                 'document-format-supported': ['application/pdf'],
+                'document-format-default': 'application/pdf',
                 'finishings-supported': ['staple'],
                 'custom-vendor-metric': { value: 7 },
+                'custom-vendor-text': 'ready',
             },
         });
 
         expect(snapshot.details).to.deep.include.members([
-            { id: 'printer_alert', name: 'printer alert', value: '["toner-low","cover-open"]' },
+            { id: 'printer_info', name: 'Printer information', value: 'Office printer' },
             { id: 'pages_per_minute', name: 'Pages per minute', value: 25 },
             { id: 'color_supported', name: 'Color printing supported', value: true },
-            { id: 'hp_default_duplex_standard', name: 'hp default duplex standard', value: true },
-            { id: 'manual_duplex_supported', name: 'manual duplex supported', value: true },
-            { id: 'custom_vendor_metric', name: 'custom vendor metric', value: '{"value":7}' },
+            { id: 'hp_default_duplex_standard', name: 'HP default duplex standard', value: true },
+            { id: 'manual_duplex_supported', name: 'Manual duplex supported', value: true },
+            { id: 'custom_vendor_text', name: 'custom vendor text', value: 'ready' },
         ]);
+        expect(snapshot.details.some(detail => detail.id === 'custom_vendor_metric')).to.equal(false);
+        expect(snapshot.details.some(detail => detail.id === 'printer_alert')).to.equal(false);
         expect(snapshot.details.some(detail => detail.id === 'marker_levels')).to.equal(false);
         expect(snapshot.details.some(detail => detail.id === 'printer_get_attributes_supported')).to.equal(false);
         expect(snapshot.details.some(detail => detail.id === 'document_format_supported')).to.equal(false);
+        expect(snapshot.details.some(detail => detail.id === 'document_format_default')).to.equal(false);
         expect(snapshot.details.some(detail => detail.id === 'finishings_supported')).to.equal(false);
     });
 
-    it('assigns distinct detail IDs when different attributes normalize to the same ID', () => {
+    it('keeps detail IDs tied to their source attribute across changing responses', () => {
+        const firstPoll = normalizeSnapshot({
+            statusCode: 'successful-ok',
+            'printer-attributes-tag': {
+                'vendor--a': 11,
+                'vendor-a': 22,
+            },
+        });
+        const nextPoll = normalizeSnapshot({
+            statusCode: 'successful-ok',
+            'printer-attributes-tag': { 'vendor-a': 22 },
+        });
+
+        const suffixedId = firstPoll.details.find(detail => detail.value === 11)?.id;
+        const canonicalId = firstPoll.details.find(detail => detail.value === 22)?.id;
+        expect(suffixedId).to.match(/^vendor_a__[a-f0-9]{64}$/);
+        expect(canonicalId).to.equal('vendor_a');
+        expect(nextPoll.details[0].id).to.equal(canonicalId);
+        expect(new Set(firstPoll.details.map(detail => detail.id)).size).to.equal(firstPoll.details.length);
+    });
+
+    it('exposes localized scalar details while keeping English status and supply labels', () => {
         const snapshot = normalizeSnapshot({
             statusCode: 'successful-ok',
             'printer-attributes-tag': {
-                vendor_a_2: 'existing suffix',
-                vendor_a: 'underscored',
-                'vendor-a': 'hyphenated',
+                'printer-state': 'processing',
+                'printer-state-message': 'Papier nachlegen',
+                'printer-state-reasons': ['media-needed', 'Papier-nachlegen'],
+                'printer-make-and-model': 'HP LaserJet 1020',
+                'printer-info': 'Drucker im Büro',
+                'marker-names': ['Schwarze Patrone'],
+                'marker-levels': [42],
+                'marker-types': ['toner'],
+                'marker-colors': ['black'],
+                'printer-location': 'Büro',
             },
         });
 
-        expect(snapshot.details).to.deep.equal([
-            { id: 'vendor_a', name: 'vendor a', value: 'hyphenated' },
-            { id: 'vendor_a_2', name: 'vendor_a', value: 'underscored' },
-            { id: 'vendor_a_2_2', name: 'vendor_a_2', value: 'existing suffix' },
-        ]);
-        expect(new Set(snapshot.details.map(detail => detail.id)).size).to.equal(snapshot.details.length);
+        expect(snapshot.status).to.equal('Load media');
+        expect(snapshot.model).to.equal('HP LaserJet 1020');
+        expect(snapshot.supplies[0]).to.include({ description: 'Black toner', sourceName: 'Schwarze Patrone' });
+        expect(snapshot.details).to.deep.include({
+            id: 'printer_info',
+            name: 'Printer information',
+            value: 'Drucker im Büro',
+        });
+        expect(snapshot.details.some(detail => detail.id === 'printer_state_message')).to.equal(false);
+    });
+
+    it('maps IPP reason severity suffixes to their English base reason', () => {
+        const errorSnapshot = normalizeSnapshot({
+            statusCode: 'successful-ok',
+            'printer-attributes-tag': {
+                'printer-state': 'stopped',
+                'printer-state-reasons': ['cover-open-error'],
+            },
+        });
+        const warningSnapshot = normalizeSnapshot({
+            statusCode: 'successful-ok',
+            'printer-attributes-tag': {
+                'printer-state': 'idle',
+                'printer-state-reasons': ['marker-supply-low-warning'],
+            },
+        });
+        const reportSnapshot = normalizeSnapshot({
+            statusCode: 'successful-ok',
+            'printer-attributes-tag': {
+                'printer-state': 'stopped',
+                'printer-state-reasons': ['cover-open-report'],
+            },
+        });
+        const baseSnapshot = normalizeSnapshot({
+            statusCode: 'successful-ok',
+            'printer-attributes-tag': {
+                'printer-state': 'stopped',
+                'printer-state-reasons': ['cover-open'],
+            },
+        });
+        const lowMediaSnapshot = normalizeSnapshot({
+            statusCode: 'successful-ok',
+            'printer-attributes-tag': {
+                'printer-state': 'idle',
+                'printer-state-reasons': ['media-low'],
+            },
+        });
+
+        expect(errorSnapshot.status).to.equal('Cover open (error)');
+        expect(warningSnapshot.status).to.equal('Supply low (warning)');
+        expect(reportSnapshot.status).to.equal('Cover open (report)');
+        expect(baseSnapshot.status).to.equal('Cover open');
+        expect(lowMediaSnapshot.status).to.equal('Media low');
+    });
+
+    it('keeps specific English reasons when standard suffixes are present', () => {
+        const coverOpenError = normalizeSnapshot({
+            statusCode: 'successful-ok',
+            'printer-attributes-tag': {
+                'printer-state': 'stopped',
+                'printer-state-reasons': ['cover-open-error'],
+            },
+        });
+        const supplyLowWarning = normalizeSnapshot({
+            statusCode: 'successful-ok',
+            'printer-attributes-tag': {
+                'printer-state': 'idle',
+                'printer-state-reasons': ['marker-supply-low-warning'],
+            },
+        });
+
+        expect(coverOpenError.status).to.equal('Cover open (error)');
+        expect(supplyLowWarning.status).to.equal('Supply low (warning)');
+    });
+
+    it('normalizes configured timeouts to valid integers', () => {
+        for (const value of [500.5, 29999.9, 0, 30001]) {
+            const timeout = normalizeRequestTimeout(value, 5000);
+            expect(Number.isInteger(timeout)).to.equal(true);
+            expect(timeout).to.be.within(500, 30000);
+        }
+        expect(normalizeRequestTimeout(500.5, 5000)).to.equal(500);
+        expect(normalizeRequestTimeout(30000.9, 5000)).to.equal(30000);
+        expect(normalizeRequestTimeout(Number.NaN, 5000)).to.equal(5000);
     });
 
     it('preserves zero values and represents unsupported values as null', () => {
@@ -169,7 +316,7 @@ describe('printerIpp', () => {
             impressionsCompleted: null,
             mediaSheetsCompleted: null,
         });
-        expect(snapshot.status).to.equal(null);
+        expect(snapshot.status).to.equal('Idle');
     });
 
     it('preserves marker positions when preceding supply data is invalid', () => {
@@ -178,13 +325,15 @@ describe('printerIpp', () => {
             'printer-attributes-tag': {
                 'marker-names': ['Invalid', 'Cyan toner'],
                 'marker-levels': [null, 45],
+                'marker-colors': ['yellow', 'cyan'],
+                'marker-types': ['toner', 'toner'],
                 'marker-low-levels': [0, 20],
                 'marker-high-levels': [100, 80],
             },
         });
 
         expect(snapshot.supplies).to.deep.equal([
-            { description: 'Cyan toner', level: 45, maxLevel: 100, unit: 14, markerType: null, sourceIndex: 1 },
+            { description: 'Cyan toner', level: 45, maxLevel: 100, unit: 14, markerType: 'toner', sourceIndex: 1 },
         ]);
     });
 
@@ -219,6 +368,7 @@ describe('printerIpp', () => {
                         'impressions-completed': 60,
                         'media-sheets-completed': 49,
                         'printer-location': 'Office',
+                        'printer-up-time': 120,
                     }),
                 );
             });
@@ -235,7 +385,7 @@ describe('printerIpp', () => {
                     host: '127.0.0.1',
                     port: address.port,
                     basePath: '/ipp/print',
-                    timeoutMs: 2000,
+                    timeoutMs: normalizeRequestTimeout(500.5, 5000),
                 },
                 trackedTimer,
             );
@@ -255,9 +405,7 @@ describe('printerIpp', () => {
                 impressionsCompleted: 60,
                 mediaSheetsCompleted: 49,
             });
-            expect(result.details).to.deep.include.members([
-                { id: 'printer_location', name: 'Printer location', value: 'Office' },
-            ]);
+            expect(result.details).to.deep.include.members([{ id: 'printer_up_time', name: 'Uptime', value: 120 }]);
         } finally {
             await new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
         }

@@ -1,51 +1,47 @@
 {
     "i18n": true,
-    "type": "tabs",
+    "type": "panel",
     "items": {
-        "basic": {
-            "type": "panel",
-            "label": "Basic configuration",
-            "items": {
-                "intervalSeconds": {
-                    "type": "number",
-                    "label": "Polling interval (seconds)",
-                    "default": 60,
-                    "min": 10,
-                    "max": 86400,
-                    "step": 1,
-                    "xs": 12,
-                    "sm": 6,
-                    "md": 6,
-                    "lg": 6,
-                    "xl": 6
-                },
-                "timeoutMs": {
-                    "type": "number",
-                    "label": "Request timeout (milliseconds)",
-                    "default": 5000,
-                    "min": 500,
-                    "max": 30000,
-                    "step": 500,
-                    "xs": 12,
-                    "sm": 6,
-                    "md": 6,
-                    "lg": 6,
-                    "xl": 6
-                }
-            }
+        "_basicHeader": {
+            "type": "header",
+            "text": "Basic configuration",
+            "size": 3
         },
-        "printers": {
-            "type": "panel",
-            "label": "Printer configuration",
-            "items": {
-                "_deviceManager": {
-                    "type": "deviceManager",
-                    "sm": 12,
-                    "style": { "width": "100%", "height": "100%", "overflow": "hidden" }
-                }
-            },
-            "style": { "width": "100%", "height": "100%", "overflow": "hidden" },
-            "innerStyle": { "width": "100%", "height": "100%", "overflow": "hidden" }
+        "intervalSeconds": {
+            "type": "number",
+            "label": "Polling interval (seconds)",
+            "default": 60,
+            "min": 10,
+            "max": 86400,
+            "step": 1,
+            "xs": 12,
+            "sm": 6,
+            "md": 6,
+            "lg": 6,
+            "xl": 6
+        },
+        "timeoutMs": {
+            "type": "number",
+            "label": "Request timeout (milliseconds)",
+            "default": 5000,
+            "min": 500,
+            "max": 30000,
+            "step": 500,
+            "xs": 12,
+            "sm": 6,
+            "md": 6,
+            "lg": 6,
+            "xl": 6
+        },
+        "_printerHeader": {
+            "type": "header",
+            "text": "Printer configuration",
+            "size": 3
+        },
+        "_deviceManager": {
+            "type": "deviceManager",
+            "sm": 12,
+            "style": { "width": "100%", "height": "100%", "overflow": "hidden" }
         }
     }
 }
