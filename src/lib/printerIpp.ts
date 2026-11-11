@@ -315,14 +315,6 @@ function normalizePrinterState(value: unknown): number | null {
     return null;
 }
 
-function normalizePrinterModel(value: unknown): string | null {
-    if (typeof value !== 'string') {
-        return null;
-    }
-    const modelTokens = value.trim().split(/\s+/).reverse();
-    return modelTokens.find(token => /^[A-Za-z][A-Za-z0-9-]*\d[A-Za-z0-9-]*$/.test(token)) ?? null;
-}
-
 function responseAttributes(response: ipp.IppResponse): Record<string, unknown> {
     const attributes = response['printer-attributes-tag'] ?? response['unsupported-attributes-tag'];
     return attributes && typeof attributes === 'object' ? (attributes as Record<string, unknown>) : {};
@@ -345,8 +337,13 @@ function statusMessage(state: number | null, reasons: string[]): string | null {
         if (reason === 'none') {
             return [];
         }
-        const message = PRINTER_STATE_REASON_LABELS.get(reason);
-        return message ? [message] : [];
+        const suffix = /-(report|warning|error)$/.exec(reason)?.[1];
+        const baseReason = suffix ? reason.slice(0, -(suffix.length + 1)) : reason;
+        const message = PRINTER_STATE_REASON_LABELS.get(baseReason);
+        if (!message) {
+            return [];
+        }
+        return [suffix ? `${message} (${suffix})` : message];
     });
     return reasonMessages.join(', ') || PRINTER_STATE_LABELS.get(state ?? -1) || null;
 }
@@ -429,7 +426,10 @@ export function normalizeSnapshot(response: ipp.IppResponse): PrinterSnapshot {
         online: true,
         printerState,
         status: statusMessage(printerState, reasons),
-        model: normalizePrinterModel(attributes['printer-make-and-model']),
+        model:
+            typeof attributes['printer-make-and-model'] === 'string' && attributes['printer-make-and-model'].trim()
+                ? attributes['printer-make-and-model'].trim()
+                : null,
         printerName: typeof attributes['printer-name'] === 'string' ? attributes['printer-name'] : null,
         supplies,
         counters: {

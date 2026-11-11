@@ -81,7 +81,7 @@ describe('printerIpp', () => {
             online: true,
             printerState: 4,
             status: 'Printing',
-            model: 'M479fdn',
+            model: 'HP LaserJet Pro MFP M479fdn',
         });
         expect(snapshot.supplies).to.deep.equal([
             { description: 'Black toner', level: 1, maxLevel: 100, unit: 14, markerType: 'toner', sourceIndex: 0 },
@@ -166,7 +166,7 @@ describe('printerIpp', () => {
                 'printer-state': 'processing',
                 'printer-state-message': 'Papier nachlegen',
                 'printer-state-reasons': ['media-needed', 'Papier-nachlegen'],
-                'printer-make-and-model': 'Drucker 123',
+                'printer-make-and-model': 'HP LaserJet 1020',
                 'marker-names': ['Schwarze Patrone'],
                 'marker-levels': [42],
                 'marker-types': ['toner'],
@@ -176,9 +176,65 @@ describe('printerIpp', () => {
         });
 
         expect(snapshot.status).to.equal('Load media');
-        expect(snapshot.model).to.equal(null);
+        expect(snapshot.model).to.equal('HP LaserJet 1020');
         expect(snapshot.supplies[0]).to.include({ description: 'Black toner', sourceName: 'Schwarze Patrone' });
         expect(snapshot.details).to.deep.equal([]);
+    });
+
+    it('maps IPP reason severity suffixes to their English base reason', () => {
+        const errorSnapshot = normalizeSnapshot({
+            statusCode: 'successful-ok',
+            'printer-attributes-tag': {
+                'printer-state': 'stopped',
+                'printer-state-reasons': ['cover-open-error'],
+            },
+        });
+        const warningSnapshot = normalizeSnapshot({
+            statusCode: 'successful-ok',
+            'printer-attributes-tag': {
+                'printer-state': 'idle',
+                'printer-state-reasons': ['marker-supply-low-warning'],
+            },
+        });
+        const reportSnapshot = normalizeSnapshot({
+            statusCode: 'successful-ok',
+            'printer-attributes-tag': {
+                'printer-state': 'stopped',
+                'printer-state-reasons': ['cover-open-report'],
+            },
+        });
+        const baseSnapshot = normalizeSnapshot({
+            statusCode: 'successful-ok',
+            'printer-attributes-tag': {
+                'printer-state': 'stopped',
+                'printer-state-reasons': ['cover-open'],
+            },
+        });
+
+        expect(errorSnapshot.status).to.equal('Cover open (error)');
+        expect(warningSnapshot.status).to.equal('Supply low (warning)');
+        expect(reportSnapshot.status).to.equal('Cover open (report)');
+        expect(baseSnapshot.status).to.equal('Cover open');
+    });
+
+    it('keeps specific English reasons when standard suffixes are present', () => {
+        const coverOpenError = normalizeSnapshot({
+            statusCode: 'successful-ok',
+            'printer-attributes-tag': {
+                'printer-state': 'stopped',
+                'printer-state-reasons': ['cover-open-error'],
+            },
+        });
+        const supplyLowWarning = normalizeSnapshot({
+            statusCode: 'successful-ok',
+            'printer-attributes-tag': {
+                'printer-state': 'idle',
+                'printer-state-reasons': ['marker-supply-low-warning'],
+            },
+        });
+
+        expect(coverOpenError.status).to.equal('Cover open (error)');
+        expect(supplyLowWarning.status).to.equal('Supply low (warning)');
     });
 
     it('normalizes configured timeouts to valid integers', () => {

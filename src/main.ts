@@ -419,7 +419,7 @@ class Ipp extends Adapter {
             common: { name: printer.label || printer.id },
             native: {},
         });
-        if (printer.id === 'info' && printer.label) {
+        if (printer.id.toLowerCase() === 'info' && printer.label) {
             const device = await this.getObjectAsync(printer.id);
             if (device?.type === 'device' && device.common.name === 'info') {
                 await this.extendObjectAsync(printer.id, { common: { name: printer.label } });
