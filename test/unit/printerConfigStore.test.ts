@@ -8,9 +8,13 @@ function makeAdapter(
 ): {
     namespace: string;
     objects: Map<string, unknown>;
+    metaObjects: Map<string, unknown>;
     files: Map<string, string>;
     deletedObjects: string[];
     getObjectAsync: (id: string) => Promise<ioBroker.Object | null | undefined>;
+    getForeignObjectAsync: (id: string) => Promise<ioBroker.Object | null | undefined>;
+    setForeignObjectNotExistsAsync: (id: string, object: ioBroker.SettableObject) => Promise<unknown>;
+    setObjectNotExistsAsync: (id: string, object: ioBroker.SettableObject) => Promise<unknown>;
     getObjectListAsync: (params: { startkey: string; endkey: string }) => Promise<{ rows: { id: string }[] }>;
     delObjectAsync: (id: string, options?: { recursive?: boolean }) => Promise<void>;
     fileExistsAsync: (adapter: string, path: string) => Promise<boolean>;
@@ -19,14 +23,29 @@ function makeAdapter(
     unlinkAsync: (adapter: string, path: string) => Promise<void>;
 } {
     const objects = new Map<string, unknown>();
+    const metaObjects = new Map<string, unknown>();
     const deletedObjects: string[] = [];
     const fileId = (adapter: string, path: string): string => `${adapter}/${path}`;
     return {
         namespace,
         objects,
+        metaObjects,
         files,
         deletedObjects,
         getObjectAsync: id => Promise.resolve((objects.get(id) as ioBroker.Object | undefined) ?? null),
+        getForeignObjectAsync: id => Promise.resolve((metaObjects.get(id) as ioBroker.Object | undefined) ?? null),
+        setForeignObjectNotExistsAsync: (id, object) => {
+            if (!metaObjects.has(id)) {
+                metaObjects.set(id, object);
+            }
+            return Promise.resolve();
+        },
+        setObjectNotExistsAsync: (id, object) => {
+            if (!objects.has(id)) {
+                objects.set(id, object);
+            }
+            return Promise.resolve();
+        },
         getObjectListAsync: params =>
             Promise.resolve({
                 rows: [...objects.keys()]
@@ -42,6 +61,10 @@ function makeAdapter(
         fileExistsAsync: (adapter, path) => Promise.resolve(files.has(fileId(adapter, path))),
         readFileAsync: (adapter, path) => Promise.resolve({ file: files.get(fileId(adapter, path))! }),
         writeFileAsync: (adapter, path, data) => {
+            const owner = metaObjects.get(adapter) as ioBroker.Object | undefined;
+            if (owner?.type !== 'meta') {
+                return Promise.reject(new Error(`${adapter} is not an object of type "meta"`));
+            }
             files.set(fileId(adapter, path), data);
             return Promise.resolve();
         },
@@ -61,6 +84,7 @@ describe('printerConfigStore', () => {
 
         expect([...adapter.objects.keys()]).to.deep.equal([]);
         expect(adapter.files.get('ipp.0/printer-config.json')).to.equal(JSON.stringify(printers));
+        expect(adapter.metaObjects.get('ipp.0')).to.include({ type: 'meta', from: 'system.adapter.ipp.0' });
 
         const lowercase = parsePrinterConfig({ id: 'info', host: 'legacy.local' }, undefined, {
             allowLegacyInfoId: true,
@@ -146,6 +170,27 @@ describe('printerConfigStore', () => {
         expect(await loadPrinterConfigurations(adapter, [{ id: 'stale', host: 'stale.local' }])).to.deep.equal(
             printers,
         );
+    });
+
+    it('does not use a foreign object at the instance namespace as file storage', async () => {
+        const adapter = makeAdapter();
+        adapter.metaObjects.set('ipp.0', {
+            type: 'meta',
+            common: { name: 'Another storage', type: 'meta.user' },
+            native: {},
+            from: 'system.adapter.other.0',
+        });
+
+        let caught: unknown;
+        try {
+            await savePrinterConfigurations(adapter, []);
+        } catch (error) {
+            caught = error;
+        }
+
+        expect(caught).to.be.instanceOf(Error);
+        expect((caught as Error).message).to.equal('Cannot use ipp.0 for printer configuration file storage');
+        expect(adapter.files.size).to.equal(0);
     });
 
     it('does not replace an unreadable stored configuration with legacy values', async () => {

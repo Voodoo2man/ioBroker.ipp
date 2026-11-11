@@ -11,6 +11,9 @@ tests.integration(path.resolve(__dirname, '../..'), {
                 this.timeout(30000);
                 const harness = getHarness();
                 const storageId = 'ipp.0.info.printerConfig';
+                if (await harness.objects.fileExists('ipp.0', 'printer-config.json')) {
+                    await harness.objects.unlinkAsync('ipp.0', 'printer-config.json');
+                }
                 if (await harness.objects.fileExists(storageId, 'printers.json')) {
                     await harness.objects.unlinkAsync(storageId, 'printers.json');
                 }

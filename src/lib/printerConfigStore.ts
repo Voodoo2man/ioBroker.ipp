@@ -1,14 +1,17 @@
 import type {} from '@iobroker/adapter-core';
 
 const PRINTER_CONFIG_FILE = 'printer-config.json';
+const PRINTER_CONFIG_STORAGE_NAME = 'Printer configuration storage';
 const LEGACY_PRINTER_CONFIG_STORAGE_ID = 'info.printerConfig';
 const LEGACY_PRINTER_CONFIG_FILE = 'printers.json';
 
 interface PrinterConfigStoreAdapter {
     namespace: string;
     getObjectAsync(id: string): Promise<ioBroker.Object | null | undefined>;
+    getForeignObjectAsync(id: string): Promise<ioBroker.Object | null | undefined>;
     getObjectListAsync(params: { startkey: string; endkey: string }): Promise<{ rows: { id: string }[] }>;
     delObjectAsync(id: string, options?: { recursive?: boolean }): Promise<unknown>;
+    setForeignObjectNotExistsAsync(id: string, object: ioBroker.SettableObject): Promise<unknown>;
     fileExistsAsync(adapter: string, path: string): Promise<boolean>;
     readFileAsync(adapter: string, path: string): ioBroker.ReadFilePromise;
     writeFileAsync(adapter: string, path: string, data: string): Promise<void>;
@@ -17,6 +20,28 @@ interface PrinterConfigStoreAdapter {
 
 function legacyStorageId(adapter: PrinterConfigStoreAdapter): string {
     return `${adapter.namespace}.${LEGACY_PRINTER_CONFIG_STORAGE_ID}`;
+}
+
+async function ensurePrinterConfigStorage(adapter: PrinterConfigStoreAdapter): Promise<void> {
+    let storageObject = await adapter.getForeignObjectAsync(adapter.namespace);
+    if (!storageObject) {
+        await adapter.setForeignObjectNotExistsAsync(adapter.namespace, {
+            type: 'meta',
+            common: { name: PRINTER_CONFIG_STORAGE_NAME, type: 'meta.user' },
+            native: {},
+            from: `system.adapter.${adapter.namespace}`,
+        });
+        storageObject = await adapter.getForeignObjectAsync(adapter.namespace);
+    }
+
+    if (
+        storageObject?.type !== 'meta' ||
+        storageObject.common.type !== 'meta.user' ||
+        storageObject.common.name !== PRINTER_CONFIG_STORAGE_NAME ||
+        storageObject.from !== `system.adapter.${adapter.namespace}`
+    ) {
+        throw new Error(`Cannot use ${adapter.namespace} for printer configuration file storage`);
+    }
 }
 
 async function hasLegacyStorageObject(adapter: PrinterConfigStoreAdapter): Promise<boolean> {
@@ -77,6 +102,7 @@ export async function loadPrinterConfigurations(
     adapter: PrinterConfigStoreAdapter,
     legacyConfiguration: unknown,
 ): Promise<unknown[]> {
+    await ensurePrinterConfigStorage(adapter);
     if (await adapter.fileExistsAsync(adapter.namespace, PRINTER_CONFIG_FILE)) {
         const printers = await readConfigurationFile(adapter, adapter.namespace, PRINTER_CONFIG_FILE);
         await removeLegacyStorage(adapter, printers);
@@ -100,6 +126,7 @@ export async function savePrinterConfigurations(
     adapter: PrinterConfigStoreAdapter,
     printers: unknown[],
 ): Promise<void> {
+    await ensurePrinterConfigStorage(adapter);
     await adapter.writeFileAsync(adapter.namespace, PRINTER_CONFIG_FILE, JSON.stringify(printers));
     await removeLegacyStorage(adapter, printers);
 }

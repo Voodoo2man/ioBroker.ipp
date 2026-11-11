@@ -22,6 +22,7 @@ const PRINTER_UNAVAILABLE_CODES = new Set([
     'ETIMEDOUT',
     'EPIPE',
 ]);
+const PRINTER_UNAVAILABLE_HTTP_STATUS_CODES = new Set([502, 503, 504]);
 const DETAIL_ATTRIBUTES = [
     ['printer-info', 'Printer information'],
     ['printer-location', 'Printer location'],
@@ -188,6 +189,7 @@ const PRINTER_STATE_REASON_LABELS = new Map([
     ['media-empty-error', 'Media empty'],
     ['media-jam', 'Paper jam'],
     ['media-jam-error', 'Paper jam'],
+    ['media-low', 'Media low'],
     ['media-needed', 'Load media'],
     ['offline', 'Offline'],
     ['output-area-full', 'Output area full'],
@@ -277,7 +279,14 @@ export interface PrinterSnapshot {
 }
 
 export function isPrinterUnavailableError(error: unknown): boolean {
-    return error instanceof Error && PRINTER_UNAVAILABLE_CODES.has((error as NodeJS.ErrnoException).code ?? '');
+    if (!(error instanceof Error)) {
+        return false;
+    }
+    const requestError = error as NodeJS.ErrnoException & { statusCode?: number };
+    return (
+        PRINTER_UNAVAILABLE_CODES.has(requestError.code ?? '') ||
+        PRINTER_UNAVAILABLE_HTTP_STATUS_CODES.has(requestError.statusCode ?? 0)
+    );
 }
 
 function asArray(value: unknown): unknown[] {
@@ -408,7 +417,9 @@ export function normalizeSnapshot(response: ipp.IppResponse): PrinterSnapshot {
                 return [];
             }
             const value =
-                typeof rawValue === 'boolean' || (typeof rawValue === 'number' && Number.isFinite(rawValue))
+                typeof rawValue === 'string' ||
+                typeof rawValue === 'boolean' ||
+                (typeof rawValue === 'number' && Number.isFinite(rawValue))
                     ? rawValue
                     : null;
             const baseId = detailId(attribute);
@@ -416,7 +427,7 @@ export function normalizeSnapshot(response: ipp.IppResponse): PrinterSnapshot {
                 return [];
             }
 
-            const name = DETAIL_NAMES.get(attribute) ?? 'Printer detail';
+            const name = DETAIL_NAMES.get(attribute) ?? attribute.replace(/-/g, ' ');
             return [{ id: baseId, name, value }];
         });
 
@@ -536,7 +547,11 @@ function sendRequest(
                 response.on('end', () => {
                     const statusCode = incomingResponse.statusCode ?? 0;
                     if (statusCode < 200 || statusCode >= 300) {
-                        finish(new Error(`IPP endpoint returned HTTP ${statusCode}`));
+                        const error = new Error(`IPP endpoint returned HTTP ${statusCode}`) as Error & {
+                            statusCode: number;
+                        };
+                        error.statusCode = statusCode;
+                        finish(error);
                         return;
                     }
                     parserWorker = new Worker(join(__dirname, 'ippParserWorker.js'), {

@@ -54,6 +54,36 @@ describe('printerIpp', () => {
         expect(isPrinterUnavailableError(new Error('Printer returned an unsuccessful IPP response'))).to.equal(false);
     });
 
+    it('classifies an HTTP 502 response as a temporarily unavailable printer', async () => {
+        const server = http.createServer((request, response) => {
+            request.resume();
+            request.on('end', () => {
+                response.writeHead(502);
+                response.end();
+            });
+        });
+        await new Promise<void>(resolve => server.listen(0, resolve));
+
+        try {
+            const address = server.address();
+            if (!address || typeof address === 'string') {
+                throw new Error('Test server did not bind to a TCP port');
+            }
+
+            let caught: unknown;
+            try {
+                await pollPrinterWithNodeTimer({ host: '127.0.0.1', port: address.port, timeoutMs: 2000 });
+            } catch (error) {
+                caught = error;
+            }
+
+            expect(caught).to.be.instanceOf(Error);
+            expect(isPrinterUnavailableError(caught)).to.equal(true);
+        } finally {
+            await new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve())));
+        }
+    });
+
     it('normalizes printer state, percentage markers, and available counters', () => {
         const snapshot = normalizeSnapshot({
             statusCode: 'successful-ok',
@@ -106,12 +136,13 @@ describe('printerIpp', () => {
         expect(snapshot.details.some(detail => detail.id === 'document_format_supported')).to.equal(false);
     });
 
-    it('publishes numeric and boolean attributes but omits text and excluded capabilities', () => {
+    it('publishes scalar attributes but omits arrays, objects, and excluded capabilities', () => {
         const snapshot = normalizeSnapshot({
             statusCode: 'successful-ok',
             'printer-attributes-tag': {
                 'printer-state': 'idle',
                 'printer-alert': ['toner-low', 'cover-open'],
+                'printer-info': 'Office printer',
                 'color-supported': true,
                 'marker-levels': [70, 45],
                 'pages-per-minute': 25,
@@ -119,22 +150,27 @@ describe('printerIpp', () => {
                 'manual-duplex-supported': true,
                 'printer-get-attributes-supported': ['printer-name', 'printer-state'],
                 'document-format-supported': ['application/pdf'],
+                'document-format-default': 'application/pdf',
                 'finishings-supported': ['staple'],
                 'custom-vendor-metric': { value: 7 },
+                'custom-vendor-text': 'ready',
             },
         });
 
         expect(snapshot.details).to.deep.include.members([
+            { id: 'printer_info', name: 'Printer information', value: 'Office printer' },
             { id: 'pages_per_minute', name: 'Pages per minute', value: 25 },
             { id: 'color_supported', name: 'Color printing supported', value: true },
             { id: 'hp_default_duplex_standard', name: 'HP default duplex standard', value: true },
             { id: 'manual_duplex_supported', name: 'Manual duplex supported', value: true },
+            { id: 'custom_vendor_text', name: 'custom vendor text', value: 'ready' },
         ]);
         expect(snapshot.details.some(detail => detail.id === 'custom_vendor_metric')).to.equal(false);
         expect(snapshot.details.some(detail => detail.id === 'printer_alert')).to.equal(false);
         expect(snapshot.details.some(detail => detail.id === 'marker_levels')).to.equal(false);
         expect(snapshot.details.some(detail => detail.id === 'printer_get_attributes_supported')).to.equal(false);
         expect(snapshot.details.some(detail => detail.id === 'document_format_supported')).to.equal(false);
+        expect(snapshot.details.some(detail => detail.id === 'document_format_default')).to.equal(false);
         expect(snapshot.details.some(detail => detail.id === 'finishings_supported')).to.equal(false);
     });
 
@@ -159,7 +195,7 @@ describe('printerIpp', () => {
         expect(new Set(firstPoll.details.map(detail => detail.id)).size).to.equal(firstPoll.details.length);
     });
 
-    it('uses English status and supply labels instead of localized printer text', () => {
+    it('exposes localized scalar details while keeping English status and supply labels', () => {
         const snapshot = normalizeSnapshot({
             statusCode: 'successful-ok',
             'printer-attributes-tag': {
@@ -167,6 +203,7 @@ describe('printerIpp', () => {
                 'printer-state-message': 'Papier nachlegen',
                 'printer-state-reasons': ['media-needed', 'Papier-nachlegen'],
                 'printer-make-and-model': 'HP LaserJet 1020',
+                'printer-info': 'Drucker im Büro',
                 'marker-names': ['Schwarze Patrone'],
                 'marker-levels': [42],
                 'marker-types': ['toner'],
@@ -178,7 +215,12 @@ describe('printerIpp', () => {
         expect(snapshot.status).to.equal('Load media');
         expect(snapshot.model).to.equal('HP LaserJet 1020');
         expect(snapshot.supplies[0]).to.include({ description: 'Black toner', sourceName: 'Schwarze Patrone' });
-        expect(snapshot.details).to.deep.equal([]);
+        expect(snapshot.details).to.deep.include({
+            id: 'printer_info',
+            name: 'Printer information',
+            value: 'Drucker im Büro',
+        });
+        expect(snapshot.details.some(detail => detail.id === 'printer_state_message')).to.equal(false);
     });
 
     it('maps IPP reason severity suffixes to their English base reason', () => {
@@ -210,11 +252,19 @@ describe('printerIpp', () => {
                 'printer-state-reasons': ['cover-open'],
             },
         });
+        const lowMediaSnapshot = normalizeSnapshot({
+            statusCode: 'successful-ok',
+            'printer-attributes-tag': {
+                'printer-state': 'idle',
+                'printer-state-reasons': ['media-low'],
+            },
+        });
 
         expect(errorSnapshot.status).to.equal('Cover open (error)');
         expect(warningSnapshot.status).to.equal('Supply low (warning)');
         expect(reportSnapshot.status).to.equal('Cover open (report)');
         expect(baseSnapshot.status).to.equal('Cover open');
+        expect(lowMediaSnapshot.status).to.equal('Media low');
     });
 
     it('keeps specific English reasons when standard suffixes are present', () => {
