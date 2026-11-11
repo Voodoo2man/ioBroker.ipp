@@ -49,7 +49,7 @@ For supply reporting, the adapter combines each `marker-names` entry with the sa
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
-### **WORK IN PROGRESS**
+### 0.2.1 (2026-11-11)
 
 - (Voodoo2man) Hardened printer configuration storage with normalized request timeouts, safer migration, per-instance file isolation, and cleanup of owned orphaned legacy roots.
 - (Voodoo2man) Treated temporary printer gateway errors as offline states without warning-level logs.
@@ -72,10 +72,6 @@ For supply reporting, the adapter combines each `marker-names` entry with the sa
 ### 0.0.2 (2026-10-28)
 
 - (Voodoo2man) Added Node.js 22 support and documented printer supply and counter attributes.
-
-### 0.0.1 (2026-10-27)
-
-- (Voodoo2man) initial release
 
 Older release notes are available in [CHANGELOG_OLD.md](CHANGELOG_OLD.md).
 
