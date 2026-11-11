@@ -23,6 +23,7 @@ tests.integration(path.resolve(__dirname, '../..'), {
                     type: 'meta',
                     common: { name: 'Printer configuration storage', type: 'meta.user' },
                     native: {},
+                    from: 'system.adapter.ipp.0',
                 });
                 await new Promise<void>((resolve, reject) => {
                     harness.objects.writeFile(

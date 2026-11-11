@@ -7,11 +7,12 @@ const LEGACY_PRINTER_CONFIG_FILE = 'printers.json';
 interface PrinterConfigStoreAdapter {
     namespace: string;
     getObjectAsync(id: string): Promise<ioBroker.Object | null | undefined>;
+    getObjectListAsync(params: { startkey: string; endkey: string }): Promise<{ rows: { id: string }[] }>;
     delObjectAsync(id: string, options?: { recursive?: boolean }): Promise<unknown>;
-    fileExistsAsync(adapter: string | null, path: string): Promise<boolean>;
-    readFileAsync(adapter: string | null, path: string): ioBroker.ReadFilePromise;
-    writeFileAsync(adapter: string | null, path: string, data: string): Promise<void>;
-    unlinkAsync(adapter: string | null, path: string): Promise<void>;
+    fileExistsAsync(adapter: string, path: string): Promise<boolean>;
+    readFileAsync(adapter: string, path: string): ioBroker.ReadFilePromise;
+    writeFileAsync(adapter: string, path: string, data: string): Promise<void>;
+    unlinkAsync(adapter: string, path: string): Promise<void>;
 }
 
 function legacyStorageId(adapter: PrinterConfigStoreAdapter): string {
@@ -23,13 +24,14 @@ async function hasLegacyStorageObject(adapter: PrinterConfigStoreAdapter): Promi
     return (
         storageObject?.type === 'meta' &&
         storageObject.common.type === 'meta.user' &&
-        storageObject.common.name === 'Printer configuration storage'
+        storageObject.common.name === 'Printer configuration storage' &&
+        storageObject.from === `system.adapter.${adapter.namespace}`
     );
 }
 
 async function readConfigurationFile(
     adapter: PrinterConfigStoreAdapter,
-    storage: string | null,
+    storage: string,
     path: string,
 ): Promise<unknown[]> {
     const { file } = await adapter.readFileAsync(storage, path);
@@ -40,24 +42,44 @@ async function readConfigurationFile(
     return storedConfiguration;
 }
 
-async function removeLegacyStorage(adapter: PrinterConfigStoreAdapter): Promise<void> {
-    if (!(await hasLegacyStorageObject(adapter))) {
+async function removeLegacyStorage(adapter: PrinterConfigStoreAdapter, printers: unknown[]): Promise<void> {
+    if (await hasLegacyStorageObject(adapter)) {
+        const storageId = legacyStorageId(adapter);
+        if (await adapter.fileExistsAsync(storageId, LEGACY_PRINTER_CONFIG_FILE)) {
+            await adapter.unlinkAsync(storageId, LEGACY_PRINTER_CONFIG_FILE);
+        }
+        await adapter.delObjectAsync(LEGACY_PRINTER_CONFIG_STORAGE_ID);
+    }
+
+    if (
+        printers.some(
+            printer => typeof printer === 'object' && printer !== null && 'id' in printer && printer.id === 'info',
+        )
+    ) {
         return;
     }
-    const storageId = legacyStorageId(adapter);
-    if (await adapter.fileExistsAsync(storageId, LEGACY_PRINTER_CONFIG_FILE)) {
-        await adapter.unlinkAsync(storageId, LEGACY_PRINTER_CONFIG_FILE);
+
+    const infoRoot = await adapter.getObjectAsync('info');
+    if (infoRoot?.type !== 'device' || infoRoot.from !== `system.adapter.${adapter.namespace}`) {
+        return;
     }
-    await adapter.delObjectAsync(LEGACY_PRINTER_CONFIG_STORAGE_ID);
+
+    const children = await adapter.getObjectListAsync({
+        startkey: `${adapter.namespace}.info.`,
+        endkey: `${adapter.namespace}.info.\u9999`,
+    });
+    if (children.rows.length === 0) {
+        await adapter.delObjectAsync('info');
+    }
 }
 
 export async function loadPrinterConfigurations(
     adapter: PrinterConfigStoreAdapter,
     legacyConfiguration: unknown,
 ): Promise<unknown[]> {
-    if (await adapter.fileExistsAsync(null, PRINTER_CONFIG_FILE)) {
-        const printers = await readConfigurationFile(adapter, null, PRINTER_CONFIG_FILE);
-        await removeLegacyStorage(adapter);
+    if (await adapter.fileExistsAsync(adapter.namespace, PRINTER_CONFIG_FILE)) {
+        const printers = await readConfigurationFile(adapter, adapter.namespace, PRINTER_CONFIG_FILE);
+        await removeLegacyStorage(adapter, printers);
         return printers;
     }
 
@@ -69,8 +91,8 @@ export async function loadPrinterConfigurations(
             : Array.isArray(legacyConfiguration)
               ? legacyConfiguration
               : [];
-    await adapter.writeFileAsync(null, PRINTER_CONFIG_FILE, JSON.stringify(printers));
-    await removeLegacyStorage(adapter);
+    await adapter.writeFileAsync(adapter.namespace, PRINTER_CONFIG_FILE, JSON.stringify(printers));
+    await removeLegacyStorage(adapter, printers);
     return printers;
 }
 
@@ -78,6 +100,6 @@ export async function savePrinterConfigurations(
     adapter: PrinterConfigStoreAdapter,
     printers: unknown[],
 ): Promise<void> {
-    await adapter.writeFileAsync(null, PRINTER_CONFIG_FILE, JSON.stringify(printers));
-    await removeLegacyStorage(adapter);
+    await adapter.writeFileAsync(adapter.namespace, PRINTER_CONFIG_FILE, JSON.stringify(printers));
+    await removeLegacyStorage(adapter, printers);
 }

@@ -18,7 +18,7 @@ Node.js 22 or newer, Admin 8.2.0 or newer, and js-controller 7.2.2 or newer are 
 
 Configure polling interval and request timeout in the **Basic configuration** tab. Add and manage printers in the **Printer configuration** tab using the Device Manager. Use its **Add printer**, **Edit**, and **Remove** actions; printer cards show the configured host, live connection state, and model when reported.
 
-Printer configurations are stored in the adapter's backed-up file storage so saving other instance settings in Admin cannot overwrite concurrent Device Manager changes. Existing `native.printers` configurations and configurations stored at `ipp.0.info.printerConfig/printers.json` are migrated automatically on first startup. Existing printers with the legacy ID `info` remain usable regardless of capitalization; new printers cannot use `info` in any capitalization.
+Printer configurations are stored in backed-up file storage per adapter instance (for example, `ipp.0/printer-config.json`) so saving other instance settings in Admin cannot overwrite concurrent Device Manager changes. Existing `native.printers` configurations and per-instance legacy configurations stored at `ipp.0.info.printerConfig/printers.json` are migrated automatically on first startup. The former shared `ipp/printer-config.json` file is not migrated automatically because its owning instance cannot be determined safely; restore its printer list through the appropriate instance's Device Manager. Existing printers with the legacy ID `info` remain usable regardless of capitalization; new printers cannot use `info` in any capitalization.
 
 | Setting | Description |
 | --- | --- |
@@ -51,7 +51,7 @@ For supply reporting, the adapter combines each `marker-names` entry with the sa
 -->
 ### **WORK IN PROGRESS**
 
-- (Voodoo2man) Stabilized dynamic detail IDs, normalized request timeouts, migrated printer configuration without reserving a printer object ID, translated IPP reason severity suffixes, preserved complete model names, and prevented localized device text from appearing in published states.
+- (Voodoo2man) Stabilized dynamic detail IDs, normalized request timeouts, migrated printer configuration without reserving a printer object ID, isolated storage per instance, cleaned up owned orphaned legacy info roots, translated IPP reason severity suffixes, preserved complete model names, and prevented localized device text from appearing in published states.
 
 ### 0.2.0 (2026-11-08)
 
