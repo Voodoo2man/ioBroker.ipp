@@ -16,7 +16,7 @@ Node.js 22 or newer, Admin 8.2.0 or newer, and js-controller 7.2.2 or newer are 
 
 ## Configuration
 
-Configure polling interval and request timeout at the top of the adapter configuration page. Add and manage printers below using the Device Manager. Use its **Add printer**, **Edit**, and **Remove** actions; printer cards show the configured host, live connection state, and model when reported.
+Configure polling interval and request timeout at the top of the adapter configuration page. Add and manage printers below using the Device Manager. Use its **Add printer**, **Edit**, and **Remove** actions; printer cards show the configured host, live connection state, and model when reported. During printer removal or legacy cleanup, the adapter preserves an object subtree if any descendant state has `common.custom` settings and logs a warning. A removed printer is no longer polled, so retained values may become stale; after transferring or removing the custom settings, delete the retained objects manually if desired.
 
 Printer configurations are stored in backed-up file storage per adapter instance (for example, at `ipp.0/printer-config.json`) so saving other instance settings in Admin cannot overwrite concurrent Device Manager changes. Existing `native.printers` configurations and per-instance legacy configurations stored at `ipp.0.info.printerConfig/printers.json` are migrated automatically on first startup. The former shared `ipp/printer-config.json` file is not migrated automatically because its owning instance cannot be determined safely; restore its printer list through the appropriate instance's Device Manager. Existing printers with the legacy ID `info` remain usable regardless of capitalization; new printers cannot use `info` in any capitalization.
 
@@ -52,6 +52,7 @@ For supply reporting, the adapter combines each `marker-names` entry with the sa
 ### **WORK IN PROGRESS**
 
 - (Voodoo2man) Updated Dependabot auto-merge to use `pull_request` with scoped `GITHUB_TOKEN` permissions.
+- (Voodoo2man) Preserved printer object subtrees containing states with custom settings during cleanup.
 - (Voodoo2man) Updated the `@iobroker/testing` devDependency to `^6.3.2`.
 
 ### 0.2.1 (2026-11-11)

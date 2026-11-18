@@ -411,7 +411,7 @@ class Ipp extends Adapter {
             const legacyId = `${printer.id}.details.${legacyChannel}`;
             const legacyObject = await this.getObjectAsync(legacyId);
             if (legacyObject?.type === 'channel') {
-                await this.delObjectAsync(legacyId, { recursive: true });
+                await this.deletePrinterObjectSubtreeIfUncustomized(legacyId);
             }
         }
         await this.setObjectNotExistsAsync(printer.id, {
@@ -494,13 +494,31 @@ class Ipp extends Adapter {
         return this.getConfiguredPrinters().find(printer => getPrinterIdKey(printer.id) === idKey);
     }
 
+    private async deletePrinterObjectSubtreeIfUncustomized(id: string): Promise<void> {
+        const prefix = `${this.namespace}.${id}.`;
+        const { rows } = await this.getObjectViewAsync('system', 'state', {
+            startkey: prefix,
+            endkey: `${prefix}\uFFFF`,
+        });
+        const protectedStates = rows
+            .filter(row => Object.keys(row.value.common.custom ?? {}).length > 0)
+            .map(row => row.id);
+        if (protectedStates.length > 0) {
+            this.log.warn(
+                `Preserving printer object subtree ${id} because descendant states have custom settings: ${protectedStates.join(', ')}`,
+            );
+            return;
+        }
+        await this.delObjectAsync(id, { recursive: true });
+    }
+
     private async deletePrinterObjects(id: string): Promise<void> {
         if (id === 'info') {
             for (const channel of ['status', 'supplies', 'counters', 'details']) {
-                await this.delObjectAsync(`info.${channel}`, { recursive: true });
+                await this.deletePrinterObjectSubtreeIfUncustomized(`info.${channel}`);
             }
         } else {
-            await this.delObjectAsync(id, { recursive: true });
+            await this.deletePrinterObjectSubtreeIfUncustomized(id);
         }
     }
 
