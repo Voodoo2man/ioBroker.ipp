@@ -416,8 +416,14 @@ class Ipp extends Adapter {
         }
         await this.setObjectNotExistsAsync(printer.id, {
             type: 'device',
-            common: { name: printer.label || printer.id },
+            common: {
+                name: printer.label || printer.id,
+                statusStates: { onlineId: 'status.online' },
+            },
             native: {},
+        });
+        await this.extendObjectAsync(printer.id, {
+            common: { statusStates: { onlineId: 'status.online' } },
         });
         if (printer.id.toLowerCase() === 'info' && printer.label) {
             const device = await this.getObjectAsync(printer.id);

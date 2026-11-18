@@ -1,4 +1,5 @@
 import type {} from '@iobroker/adapter-core';
+import { isEmptyPrinterConfigRow } from './printerConfig';
 
 const PRINTER_CONFIG_FILE = 'printer-config.json';
 const PRINTER_CONFIG_STORAGE_NAME = 'Printer configuration storage';
@@ -67,6 +68,10 @@ async function readConfigurationFile(
     return storedConfiguration;
 }
 
+function removeEmptyPrinterRows(printers: unknown[]): unknown[] {
+    return printers.filter(printer => !isEmptyPrinterConfigRow(printer));
+}
+
 async function removeLegacyStorage(adapter: PrinterConfigStoreAdapter, printers: unknown[]): Promise<void> {
     if (await hasLegacyStorageObject(adapter)) {
         const storageId = legacyStorageId(adapter);
@@ -104,19 +109,24 @@ export async function loadPrinterConfigurations(
 ): Promise<unknown[]> {
     await ensurePrinterConfigStorage(adapter);
     if (await adapter.fileExistsAsync(adapter.namespace, PRINTER_CONFIG_FILE)) {
-        const printers = await readConfigurationFile(adapter, adapter.namespace, PRINTER_CONFIG_FILE);
+        const storedPrinters = await readConfigurationFile(adapter, adapter.namespace, PRINTER_CONFIG_FILE);
+        const printers = removeEmptyPrinterRows(storedPrinters);
+        if (printers.length !== storedPrinters.length) {
+            await adapter.writeFileAsync(adapter.namespace, PRINTER_CONFIG_FILE, JSON.stringify(printers));
+        }
         await removeLegacyStorage(adapter, printers);
         return printers;
     }
 
     const oldStorageId = legacyStorageId(adapter);
-    const printers =
+    const legacyPrinters =
         (await hasLegacyStorageObject(adapter)) &&
         (await adapter.fileExistsAsync(oldStorageId, LEGACY_PRINTER_CONFIG_FILE))
             ? await readConfigurationFile(adapter, oldStorageId, LEGACY_PRINTER_CONFIG_FILE)
             : Array.isArray(legacyConfiguration)
               ? legacyConfiguration
               : [];
+    const printers = removeEmptyPrinterRows(legacyPrinters);
     await adapter.writeFileAsync(adapter.namespace, PRINTER_CONFIG_FILE, JSON.stringify(printers));
     await removeLegacyStorage(adapter, printers);
     return printers;

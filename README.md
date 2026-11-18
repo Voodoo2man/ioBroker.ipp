@@ -32,7 +32,7 @@ Printer configurations are stored in backed-up file storage per adapter instance
 
 The polling interval defaults to 60 seconds and is limited to 10 seconds through 24 hours. The request timeout defaults to 5000 ms and is limited to 500-30000 ms; it is a hard deadline for the complete request and response, including slow or incomplete responses. The adapter only sends the read-only `Get-Printer-Attributes` operation; it does not submit print jobs or change printer settings. Configure only printers that expose an IPP endpoint at the selected host, port, and resource path.
 
-Invalid printer rows are skipped with a warning that identifies the invalid fields. Debug logging reports configured field names and value types without printing configured values.
+Empty placeholder rows are ignored during startup and migration. Other invalid printer rows are skipped with a warning that identifies the invalid fields. Debug logging reports configured field names and value types without printing configured values.
 
 When a printer is switched off or temporarily unreachable, the adapter marks it offline without a warning-level log; connection and timeout details are available at debug level. IPP protocol, TLS, and configuration errors remain warnings.
 
@@ -53,6 +53,8 @@ For supply reporting, the adapter combines each `marker-names` entry with the sa
 
 - (Voodoo2man) Updated Dependabot auto-merge to use `pull_request` with scoped `GITHUB_TOKEN` permissions.
 - (Voodoo2man) Preserved printer object subtrees containing states with custom settings during cleanup.
+- (Voodoo2man) Exposed printer online status to ioBroker Admin.
+- (Voodoo2man) Stopped empty legacy printer rows from generating startup warnings.
 - (Voodoo2man) Updated the `@iobroker/testing` devDependency to `^6.3.2`.
 
 ### 0.2.1 (2026-11-11)
