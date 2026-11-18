@@ -51,6 +51,7 @@ For supply reporting, the adapter combines each `marker-names` entry with the sa
 -->
 ### **WORK IN PROGRESS**
 
+- (Voodoo2man) Updated Dependabot auto-merge to use `pull_request` with scoped `GITHUB_TOKEN` permissions.
 - (Voodoo2man) Updated the `@iobroker/testing` devDependency to `^6.3.2`.
 
 ### 0.2.1 (2026-11-11)
