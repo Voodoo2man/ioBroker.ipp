@@ -7,7 +7,7 @@ tests.integration(path.resolve(__dirname, '../..'), {
     controllerVersion: '7.2.2',
     defineAdditionalTests: ({ suite, it }) => {
         suite('Legacy printer configuration', getHarness => {
-            it('migrates and polls a printer with the existing info ID', async function (this: Context) {
+            it('preserves custom states while migrating and cleaning printer objects', async function (this: Context) {
                 this.timeout(30000);
                 const harness = getHarness();
                 const storageId = 'ipp.0.info.printerConfig';
@@ -20,6 +20,28 @@ tests.integration(path.resolve(__dirname, '../..'), {
                 await harness.objects.setObjectAsync('ipp.0.info', {
                     type: 'device',
                     common: { name: 'info' },
+                    native: {},
+                });
+                await harness.objects.setObjectAsync('ipp.0.info.details', {
+                    type: 'channel',
+                    common: { name: 'Legacy details' },
+                    native: {},
+                });
+                await harness.objects.setObjectAsync('ipp.0.info.details.status', {
+                    type: 'channel',
+                    common: { name: 'Legacy status' },
+                    native: {},
+                });
+                await harness.objects.setObjectAsync('ipp.0.info.details.status.customState', {
+                    type: 'state',
+                    common: {
+                        name: 'Custom legacy state',
+                        type: 'string',
+                        role: 'text',
+                        read: true,
+                        write: false,
+                        custom: { history: { enabled: true } },
+                    },
                     native: {},
                 });
                 await harness.objects.setObjectAsync(storageId, {
@@ -36,6 +58,8 @@ tests.integration(path.resolve(__dirname, '../..'), {
                             { id: 'info', label: 'Legacy printer', host: '127.0.0.1', port: 1 },
                             { id: 'Printer', host: '127.0.0.1', port: 1 },
                             { id: 'printer', host: '127.0.0.1', port: 1 },
+                            { id: 'Plain', host: '127.0.0.1', port: 1 },
+                            { id: 'plain', host: '127.0.0.1', port: 1 },
                         ]),
                         (error: NodeJS.ErrnoException | null) => (error ? reject(error) : resolve()),
                     );
@@ -48,6 +72,28 @@ tests.integration(path.resolve(__dirname, '../..'), {
                 await harness.objects.setObjectAsync('ipp.0.printer.status', {
                     type: 'channel',
                     common: { name: 'Stale duplicate status' },
+                    native: {},
+                });
+                await harness.objects.setObjectAsync('ipp.0.printer.status.userNote', {
+                    type: 'state',
+                    common: {
+                        name: 'Custom duplicate state',
+                        type: 'string',
+                        role: 'text',
+                        read: true,
+                        write: false,
+                        custom: { history: { enabled: true } },
+                    },
+                    native: {},
+                });
+                await harness.objects.setObjectAsync('ipp.0.plain', {
+                    type: 'device',
+                    common: { name: 'Unprotected stale duplicate printer' },
+                    native: {},
+                });
+                await harness.objects.setObjectAsync('ipp.0.plain.status', {
+                    type: 'channel',
+                    common: { name: 'Unprotected stale duplicate status' },
                     native: {},
                 });
                 await harness.changeAdapterConfig('ipp', {
@@ -65,8 +111,11 @@ tests.integration(path.resolve(__dirname, '../..'), {
                 });
                 await harness.startAdapterAndWait();
                 await printerOffline;
-                expect(await harness.objects.getObject('ipp.0.printer')).to.not.exist;
-                expect(await harness.objects.getObject('ipp.0.printer.status')).to.not.exist;
+                expect(await harness.objects.getObject('ipp.0.printer')).to.exist;
+                expect(await harness.objects.getObject('ipp.0.printer.status.userNote')).to.exist;
+                expect(await harness.objects.getObject('ipp.0.info.details.status')).to.exist;
+                expect(await harness.objects.getObject('ipp.0.info.details.status.customState')).to.exist;
+                expect(await harness.objects.getObject('ipp.0.plain')).to.not.exist;
                 expect((await harness.objects.getObject('ipp.0.info'))?.common.name).to.equal('Legacy printer');
 
                 expect(await harness.objects.getObject(storageId)).to.not.exist;
@@ -90,6 +139,7 @@ tests.integration(path.resolve(__dirname, '../..'), {
                 expect(JSON.parse(storedConfig.toString())).to.deep.equal([
                     { id: 'info', label: 'Legacy printer', host: '127.0.0.1', port: 1 },
                     { id: 'Printer', host: '127.0.0.1', port: 1 },
+                    { id: 'Plain', host: '127.0.0.1', port: 1 },
                 ]);
             });
         });
