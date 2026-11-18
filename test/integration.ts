@@ -116,7 +116,9 @@ tests.integration(path.resolve(__dirname, '../..'), {
                 expect(await harness.objects.getObject('ipp.0.info.details.status')).to.exist;
                 expect(await harness.objects.getObject('ipp.0.info.details.status.customState')).to.exist;
                 expect(await harness.objects.getObject('ipp.0.plain')).to.not.exist;
-                expect((await harness.objects.getObject('ipp.0.info'))?.common.name).to.equal('Legacy printer');
+                const legacyPrinter = await harness.objects.getObject('ipp.0.info');
+                expect(legacyPrinter?.common.name).to.equal('Legacy printer');
+                expect(legacyPrinter?.common.statusStates).to.deep.equal({ onlineId: 'status.online' });
 
                 expect(await harness.objects.getObject(storageId)).to.not.exist;
                 expect(await harness.objects.fileExists(storageId, 'printers.json')).to.equal(false);

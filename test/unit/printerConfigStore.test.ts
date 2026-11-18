@@ -153,6 +153,39 @@ describe('printerConfigStore', () => {
         expect(adapter.deletedObjects).to.deep.equal(['info.printerConfig', 'info']);
     });
 
+    it('omits empty legacy printer rows while preserving malformed rows for validation', async () => {
+        const adapter = makeAdapter();
+        const emptyAdminRow = {
+            id: '',
+            label: '',
+            host: '',
+            port: 631,
+            basePath: '/ipp/print',
+            ssl: false,
+            verifySsl: false,
+        };
+        const malformedPrinter = { id: 'bad.id', host: '' };
+        const validPrinter = { id: 'office', host: 'printer.local' };
+
+        const printers = await loadPrinterConfigurations(adapter, [emptyAdminRow, malformedPrinter, {}, validPrinter]);
+
+        expect(printers).to.deep.equal([malformedPrinter, validPrinter]);
+        expect(adapter.files.get('ipp.0/printer-config.json')).to.equal(JSON.stringify(printers));
+        expect(parsePrinterConfig(printers[0]).errors).to.deep.equal([
+            'id must contain 1-32 letters, digits, underscores, or hyphens',
+            'host is missing or is not text',
+        ]);
+    });
+
+    it('removes empty rows already present in stored printer configuration', async () => {
+        const adapter = makeAdapter();
+        const printer = { id: 'office', host: 'printer.local' };
+        adapter.files.set('ipp.0/printer-config.json', JSON.stringify([{}, printer]));
+
+        expect(await loadPrinterConfigurations(adapter, [])).to.deep.equal([printer]);
+        expect(adapter.files.get('ipp.0/printer-config.json')).to.equal(JSON.stringify([printer]));
+    });
+
     it('persists an empty migration and ignores later stale native snapshots', async () => {
         const adapter = makeAdapter();
 

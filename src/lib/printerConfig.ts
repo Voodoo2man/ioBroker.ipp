@@ -132,6 +132,37 @@ export function getPrinterConfigErrors(value: unknown, allowLegacyInfoId = false
     return errors;
 }
 
+export function isEmptyPrinterConfigRow(value: unknown): boolean {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return false;
+    }
+
+    const printer = value as Record<string, unknown>;
+    const isBlankText = (field: unknown): boolean =>
+        field === undefined || field === null || field === '' || (typeof field === 'string' && field.trim() === '');
+    if (!isBlankText(printer.id) || !isBlankText(printer.label) || !isBlankText(printer.host)) {
+        return false;
+    }
+
+    return Object.entries(printer).every(([key, field]) => {
+        switch (key) {
+            case 'id':
+            case 'label':
+            case 'host':
+                return isBlankText(field);
+            case 'port':
+                return field === undefined || field === null || field === '' || field === 631 || field === '631';
+            case 'basePath':
+                return field === undefined || field === null || field === '' || field === '/ipp/print';
+            case 'ssl':
+            case 'verifySsl':
+                return normalizeCheckbox(field) === false;
+            default:
+                return false;
+        }
+    });
+}
+
 export function describePrinterConfig(value: unknown): string {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return `rowType=${Array.isArray(value) ? 'array' : typeof value}`;
