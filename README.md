@@ -49,13 +49,11 @@ For supply reporting, the adapter combines each `marker-names` entry with the sa
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
-### **WORK IN PROGRESS**
+### 0.3.0 (2026-11-19)
 
-- (Voodoo2man) Updated Dependabot auto-merge to use `pull_request` with scoped `GITHUB_TOKEN` permissions.
-- (Voodoo2man) Preserved printer object subtrees containing states with custom settings during cleanup.
-- (Voodoo2man) Exposed printer online status to ioBroker Admin.
-- (Voodoo2man) Stopped empty legacy printer rows from generating startup warnings.
-- (Voodoo2man) Updated the `@iobroker/testing` devDependency to `^6.3.2`.
+- (Voodoo2man) Exposed printer online/offline status in ioBroker Admin.
+- (Voodoo2man) Preserved custom states in printer objects during cleanup.
+- (Voodoo2man) Prevented empty legacy printer rows from causing startup warnings.
 
 ### 0.2.1 (2026-11-11)
 
@@ -76,10 +74,6 @@ For supply reporting, the adapter combines each `marker-names` entry with the sa
 ### 0.1.0 (2026-11-03)
 
 - (Voodoo2man) Replaced the printer list with Device Manager configuration and split basic settings into a separate tab.
-
-### 0.0.2 (2026-10-28)
-
-- (Voodoo2man) Added Node.js 22 support and documented printer supply and counter attributes.
 
 Older release notes are available in [CHANGELOG_OLD.md](CHANGELOG_OLD.md).
 

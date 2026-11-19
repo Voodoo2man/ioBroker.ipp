@@ -2,8 +2,21 @@
   "common": {
     "name": "ipp",
     "nogit": true,
-    "version": "0.2.1",
+    "version": "0.3.0",
     "news": {
+      "0.3.0": {
+        "en": "Exposed printer online/offline status in ioBroker Admin.\nPreserved custom states in printer objects during cleanup.\nPrevented empty legacy printer rows from causing startup warnings.",
+        "de": "Der Online-/Offline-Status von Druckern wird jetzt in ioBroker Admin angezeigt.\nBenutzerdefinierte Zustände in Druckerobjekten bleiben beim Bereinigen erhalten.\nLeere alte Druckereinträge verursachen keine Startwarnungen mehr.",
+        "ru": "Состояние принтера (в сети/не в сети) теперь отображается в ioBroker Admin.\nПользовательские состояния в объектах принтеров сохраняются при очистке.\nПустые устаревшие строки принтеров больше не вызывают предупреждения при запуске.",
+        "pt": "Os dispositivos de impressora agora exibem o estado online/offline no ioBroker Admin.\nOs estados personalizados nos objetos da impressora são preservados durante a limpeza.\nLinhas vazias de impressoras antigas não geram mais avisos na inicialização.",
+        "nl": "De online-/offlinestatus van printers wordt nu weergegeven in ioBroker Admin.\nAangepaste statussen in printerobjecten blijven behouden tijdens het opschonen.\nLege oude printerregels veroorzaken geen opstartwaarschuwingen meer.",
+        "fr": "L’état en ligne/hors ligne des imprimantes est désormais affiché dans ioBroker Admin.\nLes états personnalisés des objets d’imprimante sont conservés lors du nettoyage.\nLes anciennes lignes de configuration d’imprimante vides ne provoquent plus d’avertissements au démarrage.",
+        "it": "Lo stato online/offline delle stampanti è ora visualizzato in ioBroker Admin.\nGli stati personalizzati negli oggetti delle stampanti vengono preservati durante la pulizia.\nLe righe vuote delle vecchie configurazioni delle stampanti non generano più avvisi all’avvio.",
+        "es": "El estado en línea/fuera de línea de las impresoras ahora se muestra en ioBroker Admin.\nLos estados personalizados de los objetos de impresora se conservan durante la limpieza.\nLas filas vacías de configuraciones antiguas de impresoras ya no generan advertencias al iniciar.",
+        "pl": "Stan online/offline drukarek jest teraz wyświetlany w ioBroker Admin.\nPodczas czyszczenia zachowywane są niestandardowe stany w obiektach drukarek.\nPuste wiersze starszej konfiguracji drukarek nie powodują już ostrzeżeń przy uruchamianiu.",
+        "uk": "Стан принтера онлайн/офлайн тепер відображається в ioBroker Admin.\nСпеціальні стани в об'єктах принтера зберігаються під час очищення.\nПорожні рядки застарілої конфігурації принтерів більше не спричиняють попереджень під час запуску.",
+        "zh-cn": "更新了 Dependabot 自动合并功能，使用具有 GITHUB_TOKEN 范围权限的 `pull_request` 权限。\n在清理期间保留了包含具有自定义设置的状态的打印机对象子树。\n向 IOBroker 管理员公开了打印机的在线状态。\n已停止旧版打印机空行生成启动警告。\n将 @iobroker /testing devDependency 更新为 ^6.3.2。"
+      },
       "0.2.1": {
         "en": "Hardened printer configuration storage with normalized request timeouts, safer migration, per-instance file isolation, and cleanup of owned orphaned legacy roots.\nTreated temporary printer gateway errors as offline states without warning-level logs.\nImproved published printer data with stable detail IDs, English IPP reason labels, complete model names, and scalar text details that may retain printer-localized wording.\nCombined basic settings and printer management on one configuration page.",
         "de": "Gehärteter Druckerkonfigurationsspeicher mit normalen Abfrage-Timeouts, sichererer Migration, Dateiisolierung und Bereinigung verwaister Roots.\nBehandelte temporäre Drucker-Gateway-Fehler als Offline-Status ohne Warnprotokolle.\nVerbesserte Druckdaten mit stabilen IDs, englischen IPP-Begründungen, vollständigen Modellnamen und skalaren Textdetails, ggf. mit Originaltext.\nGrundeinstellungen und Druckerverwaltung auf einer Seite.",
