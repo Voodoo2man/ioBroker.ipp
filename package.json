@@ -50,6 +50,7 @@
     "build/lib/printerConfig.js",
     "build/lib/printerConfigStore.js",
     "build/lib/printerEndpoint.js",
+    "build/lib/printerDiscovery.js",
     "build/lib/printerIpp.js",
     "build/lib/ippParserWorker.js",
     "build/lib/serialQueue.js",
