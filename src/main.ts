@@ -1,4 +1,5 @@
 import { Adapter, type AdapterOptions } from '@iobroker/adapter-core';
+import { networkInterfaces } from 'node:os';
 import {
     DeviceManagement,
     type ActionContext,
@@ -9,6 +10,7 @@ import {
 } from '@iobroker/dm-utils';
 import {
     describePrinterConfig,
+    getNewPrinterConfigs,
     getPrinterIdKey,
     getUniquePrinterConfigs,
     parsePrinterConfig,
@@ -16,6 +18,16 @@ import {
 } from './lib/printerConfig';
 import { loadPrinterConfigurations, savePrinterConfigurations } from './lib/printerConfigStore';
 import { isValidIppBasePath, isValidPrinterHost } from './lib/printerEndpoint';
+import {
+    createDeferredPrinterScanRefresh,
+    createSerializedProgressUpdates,
+    flushDeferredPrinterScanRefresh,
+    getPrinterScanTargets,
+    MAX_CONFIGURED_PRINTER_HOSTNAMES,
+    MAX_PRINTER_SCAN_ADDRESSES,
+    MAX_PRINTER_SCAN_CONCURRENCY,
+    scanForPrinters,
+} from './lib/printerDiscovery';
 import { SerialQueue } from './lib/serialQueue';
 import { isPrinterUnavailableError, normalizeRequestTimeout, pollPrinter } from './lib/printerIpp';
 import { markOffline, publishSnapshot } from './lib/printerState';
@@ -24,6 +36,7 @@ const DEFAULT_INTERVAL_SECONDS = 60;
 const DEFAULT_TIMEOUT_MS = 5000;
 const MIN_INTERVAL_SECONDS = 10;
 const MAX_INTERVAL_SECONDS = 86400;
+const PRINTER_SCAN_TIMEOUT_MS = 1000;
 type CompleteTranslations = {
     en: string;
     de: string;
@@ -262,11 +275,226 @@ const translations = {
     },
 } satisfies Record<string, CompleteTranslations>;
 
+const scanTranslations = {
+    scanPrinters: {
+        en: 'Scan for printers',
+        de: 'Nach Druckern suchen',
+        ru: 'Поиск принтеров',
+        pt: 'Procurar impressoras',
+        nl: 'Scannen naar printers',
+        fr: 'Rechercher des imprimantes',
+        it: 'Cerca stampanti',
+        es: 'Buscar impresoras',
+        pl: 'Skanuj w poszukiwaniu drukarek',
+        uk: 'Шукати принтери',
+        'zh-cn': '扫描打印机',
+    },
+    scanning: {
+        en: 'Scanning for printers',
+        de: 'Druckersuche läuft',
+        ru: 'Выполняется поиск принтеров',
+        pt: 'Procurando impressoras',
+        nl: 'Printers zoeken',
+        fr: "Recherche d'imprimantes",
+        it: 'Ricerca delle stampanti',
+        es: 'Buscando impresoras',
+        pl: 'Wyszukiwanie drukarek',
+        uk: 'Пошук принтерів',
+        'zh-cn': '正在扫描打印机',
+    },
+    progress: {
+        en: 'Address {completed} of {total}',
+        de: 'Adresse {completed} von {total}',
+        ru: 'Адрес {completed} из {total}',
+        pt: 'Endereço {completed} de {total}',
+        nl: 'Adres {completed} van {total}',
+        fr: 'Adresse {completed} sur {total}',
+        it: 'Indirizzo {completed} di {total}',
+        es: 'Dirección {completed} de {total}',
+        pl: 'Adres {completed} z {total}',
+        uk: 'Адреса {completed} з {total}',
+        'zh-cn': '地址 {completed}/{total}',
+    },
+    noTargets: {
+        en: 'No eligible private or link-local IPv4 addresses were found on directly connected networks.',
+        de: 'In direkt verbundenen Netzwerken wurden keine geeigneten privaten oder Link-Local-IPv4-Adressen gefunden.',
+        ru: 'В напрямую подключённых сетях не найдено подходящих частных IPv4-адресов или адресов link-local.',
+        pt: 'Não foram encontrados endereços IPv4 privados ou link-local elegíveis nas redes diretamente conectadas.',
+        nl: 'Geen geschikte private of link-local IPv4-adressen gevonden op direct verbonden netwerken.',
+        fr: "Aucune adresse IPv4 privée ou link-local éligible n'a été trouvée sur les réseaux directement connectés.",
+        it: 'Nessun indirizzo IPv4 privato o link-local idoneo trovato sulle reti direttamente connesse.',
+        es: 'No se encontraron direcciones IPv4 privadas o link-local aptas en las redes conectadas directamente.',
+        pl: 'Nie znaleziono odpowiednich prywatnych ani link-local adresów IPv4 w sieciach bezpośrednio połączonych.',
+        uk: 'У безпосередньо підключених мережах не знайдено відповідних приватних або link-local IPv4-адрес.',
+        'zh-cn': '在直接连接的网络中未找到符合条件的私有或链路本地 IPv4 地址。',
+    },
+    configuredHostnameResolutionFailed: {
+        en: 'Scanning was skipped because a configured printer hostname could not be resolved safely.',
+        de: 'Die Suche wurde übersprungen, da ein konfigurierter Drucker-Hostname nicht sicher aufgelöst werden konnte.',
+        ru: 'Сканирование пропущено: не удалось безопасно разрешить имя настроенного принтера.',
+        pt: 'A pesquisa foi ignorada porque não foi possível resolver com segurança o nome de uma impressora configurada.',
+        nl: 'De scan is overgeslagen omdat een geconfigureerde printernaam niet veilig kon worden omgezet.',
+        fr: "La recherche a été ignorée, car le nom d'une imprimante configurée n'a pas pu être résolu en toute sécurité.",
+        it: 'La scansione è stata ignorata perché non è stato possibile risolvere in modo sicuro il nome di una stampante configurata.',
+        es: 'Se omitió el escaneo porque no se pudo resolver de forma segura el nombre de una impresora configurada.',
+        pl: 'Pominięto skanowanie, ponieważ nie można było bezpiecznie rozpoznać nazwy skonfigurowanej drukarki.',
+        uk: 'Сканування пропущено, оскільки не вдалося безпечно визначити адресу налаштованого принтера.',
+        'zh-cn': '由于无法安全解析已配置的打印机主机名，已跳过扫描。',
+    },
+    configuredHostnameResolutionLimited: {
+        en: 'Scanning was skipped because more than {maximum} unique configured printer hostnames would need resolution.',
+        de: 'Die Suche wurde übersprungen, da mehr als {maximum} eindeutige konfigurierte Drucker-Hostnamen aufgelöst werden müssten.',
+        ru: 'Сканирование пропущено: требуется разрешить более {maximum} уникальных имён настроенных принтеров.',
+        pt: 'A pesquisa foi ignorada porque seria necessário resolver mais de {maximum} nomes únicos de impressoras configuradas.',
+        nl: 'De scan is overgeslagen omdat meer dan {maximum} unieke geconfigureerde printernamen moeten worden omgezet.',
+        fr: 'La recherche a été ignorée, car il faudrait résoudre plus de {maximum} noms uniques d’imprimantes configurées.',
+        it: 'La scansione è stata ignorata perché sarebbe necessario risolvere più di {maximum} nomi univoci di stampanti configurate.',
+        es: 'Se omitió el escaneo porque habría que resolver más de {maximum} nombres únicos de impresoras configuradas.',
+        pl: 'Pominięto skanowanie, ponieważ należałoby rozpoznać więcej niż {maximum} unikatowych nazw skonfigurowanych drukarek.',
+        uk: 'Сканування пропущено, оскільки потрібно визначити понад {maximum} унікальних імен налаштованих принтерів.',
+        'zh-cn': '由于需要解析的已配置打印机主机名超过 {maximum} 个，已跳过扫描。',
+    },
+    noResults: {
+        en: 'No IPP printers were found at /ipp/print on TCP port 631 after checking {scanned} addresses.',
+        de: 'Nach Prüfung von {scanned} Adressen wurden keine IPP-Drucker unter /ipp/print an TCP-Port 631 gefunden.',
+        ru: 'После проверки {scanned} адресов IPP-принтеры на /ipp/print через TCP-порт 631 не найдены.',
+        pt: 'Nenhuma impressora IPP foi encontrada em /ipp/print na porta TCP 631 após verificar {scanned} endereços.',
+        nl: 'Na controle van {scanned} adressen zijn geen IPP-printers gevonden op /ipp/print via TCP-poort 631.',
+        fr: "Aucune imprimante IPP n'a été trouvée sur /ipp/print au port TCP 631 après vérification de {scanned} adresses.",
+        it: 'Nessuna stampante IPP trovata su /ipp/print alla porta TCP 631 dopo aver controllato {scanned} indirizzi.',
+        es: 'No se encontraron impresoras IPP en /ipp/print en el puerto TCP 631 tras comprobar {scanned} direcciones.',
+        pl: 'Po sprawdzeniu {scanned} adresów nie znaleziono drukarek IPP pod /ipp/print na porcie TCP 631.',
+        uk: 'Після перевірки {scanned} адрес IPP-принтери на /ipp/print через TCP-порт 631 не знайдені.',
+        'zh-cn': '检查 {scanned} 个地址后，未在 TCP 端口 631 的 /ipp/print 上发现 IPP 打印机。',
+    },
+    found: {
+        en: 'Found {found} IPP printer candidate(s). Select which to add; confirm each in the printer form. Scanning does not save devices.',
+        de: '{found} mögliche IPP-Drucker gefunden. Wählen Sie die hinzuzufügenden Geräte aus und bestätigen Sie jeden im Formular. Die Suche speichert keine Geräte.',
+        ru: 'Найдено кандидатов IPP-принтеров: {found}. Выберите нужные и подтвердите каждый в форме. Поиск не сохраняет устройства.',
+        pt: 'Encontradas {found} possíveis impressoras IPP. Selecione as que pretende adicionar e confirme cada uma no formulário. A pesquisa não guarda dispositivos.',
+        nl: '{found} mogelijke IPP-printers gevonden. Selecteer welke u wilt toevoegen en bevestig elke printer in het formulier. Scannen slaat niets op.',
+        fr: "{found} imprimante(s) IPP potentielle(s) trouvée(s). Sélectionnez celles à ajouter et confirmez chacune dans le formulaire. La recherche n'enregistre rien.",
+        it: 'Trovate {found} possibili stampanti IPP. Selezionare quelle da aggiungere e confermare ciascuna nel modulo. La scansione non salva nulla.',
+        es: 'Se encontraron {found} posibles impresoras IPP. Seleccione cuáles añadir y confirme cada una en el formulario. La búsqueda no guarda nada.',
+        pl: 'Znaleziono kandydatów na drukarki IPP: {found}. Wybierz je i potwierdź każdą w formularzu. Skanowanie niczego nie zapisuje.',
+        uk: 'Знайдено кандидатів IPP-принтерів: {found}. Виберіть потрібні та підтвердьте кожен у формі. Сканування нічого не зберігає.',
+        'zh-cn': '发现 {found} 个可能的 IPP 打印机。选择要添加的设备，并在打印机表单中逐一确认。扫描不会保存设备。',
+    },
+    limit: {
+        en: 'The scan is limited to {maximum} addresses; some printers may not have been checked.',
+        de: 'Die Suche ist auf {maximum} Adressen begrenzt; möglicherweise wurden nicht alle Drucker geprüft.',
+        ru: 'Сканирование ограничено {maximum} адресами; некоторые принтеры могли не попасть в проверку.',
+        pt: 'A pesquisa está limitada a {maximum} endereços; algumas impressoras podem não ter sido verificadas.',
+        nl: 'De scan is beperkt tot {maximum} adressen; sommige printers zijn mogelijk niet gecontroleerd.',
+        fr: "La recherche est limitée à {maximum} adresses ; certaines imprimantes n'ont peut-être pas été vérifiées.",
+        it: 'La scansione è limitata a {maximum} indirizzi; alcune stampanti potrebbero non essere state controllate.',
+        es: 'El escaneo está limitado a {maximum} direcciones; es posible que no se hayan comprobado algunas impresoras.',
+        pl: 'Skanowanie jest ograniczone do {maximum} adresów; niektóre drukarki mogły nie zostać sprawdzone.',
+        uk: 'Сканування обмежено {maximum} адресами; деякі принтери могли не перевірятися.',
+        'zh-cn': '扫描最多检查 {maximum} 个地址；部分打印机可能未被检查。',
+    },
+    selectTitle: {
+        en: 'Select printers to add',
+        de: 'Drucker zum Hinzufügen auswählen',
+        ru: 'Выберите принтеры для добавления',
+        pt: 'Selecionar impressoras para adicionar',
+        nl: 'Printers selecteren om toe te voegen',
+        fr: 'Sélectionner les imprimantes à ajouter',
+        it: 'Seleziona le stampanti da aggiungere',
+        es: 'Seleccionar impresoras para añadir',
+        pl: 'Wybierz drukarki do dodania',
+        uk: 'Виберіть принтери для додавання',
+        'zh-cn': '选择要添加的打印机',
+    },
+    candidates: {
+        en: 'Printer candidates',
+        de: 'Druckerkandidaten',
+        ru: 'Кандидаты в принтеры',
+        pt: 'Impressoras encontradas',
+        nl: 'Printerkandidaten',
+        fr: 'Imprimantes candidates',
+        it: 'Stampanti candidate',
+        es: 'Impresoras candidatas',
+        pl: 'Kandydaci na drukarki',
+        uk: 'Кандидати на принтери',
+        'zh-cn': '打印机候选项',
+    },
+    alreadyRunning: {
+        en: 'A printer scan is already running.',
+        de: 'Eine Druckersuche läuft bereits.',
+        ru: 'Поиск принтеров уже выполняется.',
+        pt: 'Já está a decorrer uma pesquisa de impressoras.',
+        nl: 'Er wordt al naar printers gescand.',
+        fr: 'Une recherche des imprimantes est déjà en cours.',
+        it: 'È già in corso una scansione delle stampanti.',
+        es: 'Ya hay un escaneo de impresoras en curso.',
+        pl: 'Skanowanie drukarek jest już uruchomione.',
+        uk: 'Сканування принтерів уже виконується.',
+        'zh-cn': '打印机扫描已在运行。',
+    },
+    scanFailed: {
+        en: 'Could not scan for printers',
+        de: 'Druckersuche fehlgeschlagen',
+        ru: 'Не удалось выполнить поиск принтеров',
+        pt: 'Não foi possível procurar impressoras',
+        nl: 'Scannen naar printers is mislukt',
+        fr: 'Impossible de rechercher des imprimantes',
+        it: 'Impossibile cercare stampanti',
+        es: 'No se pudieron buscar impresoras',
+        pl: 'Nie można było wyszukać drukarek',
+        uk: 'Не вдалося знайти принтери',
+        'zh-cn': '无法扫描打印机',
+    },
+} satisfies Record<string, CompleteTranslations>;
+
 function withErrorDetail(messages: CompleteTranslations, error: unknown): CompleteTranslations {
     const detail = error instanceof Error ? error.message : String(error);
     return Object.fromEntries(
         Object.entries(messages).map(([language, message]) => [language, `${message}: ${detail}`]),
     ) as CompleteTranslations;
+}
+
+function withTranslationValues(
+    messages: CompleteTranslations,
+    values: Record<string, string | number>,
+): CompleteTranslations {
+    return Object.fromEntries(
+        Object.entries(messages).map(([language, message]) => [
+            language,
+            message.replace(/\{(\w+)\}/g, (placeholder, key: string) => String(values[key] ?? placeholder)),
+        ]),
+    ) as CompleteTranslations;
+}
+
+function appendTranslations(first: CompleteTranslations, second: CompleteTranslations): CompleteTranslations {
+    return Object.fromEntries(
+        Object.entries(first).map(([language, message]) => [
+            language,
+            `${message} ${second[language as keyof CompleteTranslations]}`,
+        ]),
+    ) as CompleteTranslations;
+}
+
+function awaitWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+    if (signal.aborted) {
+        throw new Error('Printer scan was cancelled');
+    }
+    return new Promise((resolve, reject) => {
+        const onAbort = (): void => {
+            signal.removeEventListener('abort', onAbort);
+            reject(new Error('Printer scan was cancelled'));
+        };
+        const onResolve = (value: T): void => {
+            signal.removeEventListener('abort', onAbort);
+            resolve(value);
+        };
+        const onReject = (error: unknown): void => {
+            signal.removeEventListener('abort', onAbort);
+            reject(error instanceof Error ? error : new Error(String(error)));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        promise.then(onResolve, onReject);
+    });
 }
 
 const printerIcon =
@@ -305,6 +533,11 @@ function getPrinterFormSchema(idReadOnly = false): JsonFormSchema {
 function boundedNumber(value: unknown, fallback: number, min: number, max: number): number {
     const number = Number(value);
     return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
+}
+
+interface SavePrinterOptions {
+    preservedController?: AbortController;
+    deferPoll?: boolean;
 }
 
 class Ipp extends Adapter {
@@ -454,7 +687,7 @@ class Ipp extends Adapter {
         return this.configReady;
     }
 
-    public async savePrinter(printer: unknown, previousId?: string): Promise<void> {
+    public async savePrinter(printer: unknown, previousId?: string, options: SavePrinterOptions = {}): Promise<void> {
         return this.configUpdates.run(async () => {
             await this.configReady;
             const parsed = parsePrinterConfig(printer, previousId, {
@@ -477,7 +710,7 @@ class Ipp extends Adapter {
                 throw new Error('A printer with this ID is already configured');
             }
             printers.push(parsed.config);
-            await this.savePrinterList(printers);
+            await this.savePrinterList(printers, options);
         });
     }
 
@@ -498,6 +731,19 @@ class Ipp extends Adapter {
     public getPrinter(id: string): PrinterConfig | undefined {
         const idKey = getPrinterIdKey(id);
         return this.getConfiguredPrinters().find(printer => getPrinterIdKey(printer.id) === idKey);
+    }
+
+    public createPrinterScanController(): AbortController {
+        const controller = new AbortController();
+        this.activeRequests.add(controller);
+        if (this.unloading) {
+            controller.abort();
+        }
+        return controller;
+    }
+
+    public releasePrinterScanController(controller: AbortController): void {
+        this.activeRequests.delete(controller);
     }
 
     private async deletePrinterObjectSubtreeIfUncustomized(id: string): Promise<void> {
@@ -528,11 +774,13 @@ class Ipp extends Adapter {
         }
     }
 
-    private async savePrinterList(printers: unknown[]): Promise<void> {
+    private async savePrinterList(printers: unknown[], options: SavePrinterOptions = {}): Promise<void> {
         const previousIds = new Set(this.printers.map(printer => printer.id));
         this.configRevision++;
         for (const controller of this.activeRequests) {
-            controller.abort();
+            if (controller !== options.preservedController) {
+                controller.abort();
+            }
         }
         await this.activePoll;
         try {
@@ -549,10 +797,21 @@ class Ipp extends Adapter {
                 await this.deletePrinterObjects(id);
             }
         }
-        for (const printer of this.printers) {
+        const printersToInitialize = options.deferPoll
+            ? getNewPrinterConfigs(this.printers, previousIds)
+            : this.printers;
+        for (const printer of printersToInitialize) {
             await this.createPrinterObjects(printer);
         }
-        await this.pollAndSchedule();
+        if (!options.deferPoll) {
+            await this.pollAndSchedule();
+        }
+    }
+
+    public async refreshPrintersAfterScan(): Promise<void> {
+        if (!this.unloading) {
+            await this.pollAndSchedule();
+        }
     }
 
     private pollPrinters(): Promise<void> {
@@ -675,6 +934,8 @@ class Ipp extends Adapter {
 }
 
 class IppDeviceManagement extends DeviceManagement<Ipp, string> {
+    private scanInProgress = false;
+
     protected override getInstanceInfo(): InstanceDetails {
         return {
             apiVersion: 'v3',
@@ -698,6 +959,12 @@ class IppDeviceManagement extends DeviceManagement<Ipp, string> {
                             return { refresh: false };
                         }
                     },
+                },
+                {
+                    id: 'scanPrinters',
+                    icon: 'search',
+                    title: scanTranslations.scanPrinters,
+                    handler: async (context: ActionContext) => this.scanPrinters(context),
                 },
             ],
         };
@@ -766,6 +1033,273 @@ class IppDeviceManagement extends DeviceManagement<Ipp, string> {
             },
         };
         return { id, schema: detailsSchema, data: printer };
+    }
+
+    private async scanPrinters(context: ActionContext): Promise<{ refresh: boolean }> {
+        const scanController = this.adapter.createPrinterScanController();
+        if (scanController.signal.aborted) {
+            this.adapter.releasePrinterScanController(scanController);
+            return { refresh: false };
+        }
+        if (this.scanInProgress) {
+            try {
+                await context.showMessage(scanTranslations.alreadyRunning);
+                return { refresh: false };
+            } finally {
+                this.adapter.releasePrinterScanController(scanController);
+            }
+        }
+        this.scanInProgress = true;
+        let progress: Awaited<ReturnType<ActionContext['openProgress']>> | undefined;
+        let progressUpdates: ReturnType<typeof createSerializedProgressUpdates> | undefined;
+        let added = false;
+        const deferredScanRefresh = createDeferredPrinterScanRefresh(() => this.adapter.refreshPrintersAfterScan());
+        const closeProgress = async (): Promise<void> => {
+            if (!progress) {
+                return;
+            }
+            const openedProgress = progress;
+            progress = undefined;
+            if (!scanController.signal.aborted) {
+                try {
+                    await awaitWithAbort(progressUpdates?.flush() ?? Promise.resolve(), scanController.signal);
+                } catch {
+                    // Cancellation or a failed progress update must not prevent closing the dialog.
+                }
+            }
+            try {
+                await openedProgress.close();
+            } catch {
+                // The scan result remains the useful outcome if the progress dialog has already closed.
+            }
+        };
+        try {
+            await awaitWithAbort(this.adapter.waitForConfig(), scanController.signal);
+            if (scanController.signal.aborted) {
+                return { refresh: false };
+            }
+            const configuredPrinters = this.adapter.getConfiguredPrinters();
+            const targets = await getPrinterScanTargets(networkInterfaces(), {
+                configuredHosts: configuredPrinters.map(printer => printer.host),
+                signal: scanController.signal,
+            });
+            if (scanController.signal.aborted) {
+                return { refresh: false };
+            }
+            if (targets.configuredHostResolutionLimited) {
+                await context.showMessage(
+                    withTranslationValues(scanTranslations.configuredHostnameResolutionLimited, {
+                        maximum: MAX_CONFIGURED_PRINTER_HOSTNAMES,
+                    }),
+                );
+                return { refresh: false };
+            }
+            if (targets.configuredHostResolutionFailed) {
+                await context.showMessage(scanTranslations.configuredHostnameResolutionFailed);
+                return { refresh: false };
+            }
+            if (targets.addresses.length === 0) {
+                await context.showMessage(scanTranslations.noTargets);
+                return { refresh: false };
+            }
+
+            const openingProgress = context.openProgress(scanTranslations.scanning, {
+                value: 0,
+                label: withTranslationValues(scanTranslations.progress, {
+                    completed: 0,
+                    total: targets.addresses.length,
+                }),
+            });
+            try {
+                progress = await awaitWithAbort(openingProgress, scanController.signal);
+            } catch (error) {
+                if (scanController.signal.aborted) {
+                    void openingProgress.then(openedProgress => openedProgress.close()).catch(() => undefined);
+                }
+                throw error;
+            }
+            if (scanController.signal.aborted) {
+                return { refresh: false };
+            }
+            const progressDialog = progress;
+            progressUpdates = createSerializedProgressUpdates(
+                (completed, total) =>
+                    progressDialog.update({
+                        value: Math.floor((completed / total) * 100),
+                        label: withTranslationValues(scanTranslations.progress, { completed, total }),
+                    }),
+                scanController.signal,
+            );
+            const progressUpdateStride = Math.max(1, Math.ceil(targets.addresses.length / 20));
+            const result = await scanForPrinters(
+                targets,
+                host =>
+                    pollPrinter(
+                        {
+                            host,
+                            port: 631,
+                            basePath: '/ipp/print',
+                            ssl: false,
+                            verifySsl: false,
+                            timeoutMs: PRINTER_SCAN_TIMEOUT_MS,
+                            signal: scanController.signal,
+                        },
+                        {
+                            schedule: (callback, timeout) => this.adapter.setTimeout(callback, timeout),
+                            cancel: timer => this.adapter.clearTimeout(timer),
+                        },
+                    ),
+                {
+                    concurrency: MAX_PRINTER_SCAN_CONCURRENCY,
+                    configuredIds: configuredPrinters.map(printer => printer.id),
+                    signal: scanController.signal,
+                    onProgress: (completed, total) => {
+                        if (completed === total || completed % progressUpdateStride === 0) {
+                            return progressUpdates!.report(completed, total);
+                        }
+                    },
+                },
+            );
+            if (scanController.signal.aborted) {
+                return { refresh: false };
+            }
+            await awaitWithAbort(progressUpdates.flush(), scanController.signal);
+            if (scanController.signal.aborted) {
+                return { refresh: false };
+            }
+            await closeProgress();
+            if (scanController.signal.aborted) {
+                return { refresh: false };
+            }
+
+            if (result.candidates.length === 0) {
+                let message = withTranslationValues(scanTranslations.noResults, { scanned: result.scanned });
+                if (targets.limited) {
+                    message = appendTranslations(
+                        message,
+                        withTranslationValues(scanTranslations.limit, { maximum: MAX_PRINTER_SCAN_ADDRESSES }),
+                    );
+                }
+                await context.showMessage(message);
+                return { refresh: false };
+            }
+
+            let message = withTranslationValues(scanTranslations.found, { found: result.candidates.length });
+            if (targets.limited) {
+                message = appendTranslations(
+                    message,
+                    withTranslationValues(scanTranslations.limit, { maximum: MAX_PRINTER_SCAN_ADDRESSES }),
+                );
+            }
+            await context.showMessage(message);
+            if (scanController.signal.aborted) {
+                return { refresh: false };
+            }
+            const selection = await context.showForm(
+                {
+                    type: 'panel',
+                    items: {
+                        selected: {
+                            type: 'select',
+                            label: scanTranslations.candidates,
+                            multiple: true,
+                            options: result.candidates.map(candidate => ({
+                                label: `${candidate.label} (${candidate.host})`,
+                                value: candidate.id,
+                            })),
+                        },
+                    },
+                },
+                {
+                    title: scanTranslations.selectTitle,
+                    data: { selected: [] },
+                    ignoreApplyDisabled: true,
+                },
+            );
+            if (scanController.signal.aborted) {
+                return { refresh: false };
+            }
+            const selectedValue: unknown = selection?.selected;
+            const selectedIds = new Set(
+                typeof selectedValue === 'string'
+                    ? [selectedValue]
+                    : Array.isArray(selectedValue)
+                      ? selectedValue.filter((id): id is string => typeof id === 'string')
+                      : [],
+            );
+            for (const candidate of result.candidates) {
+                if (scanController.signal.aborted) {
+                    return { refresh: false };
+                }
+                if (!selectedIds.has(candidate.id)) {
+                    continue;
+                }
+                const data = await context.showForm(getPrinterFormSchema(), {
+                    title: translations.addPrinter,
+                    data: {
+                        id: candidate.id,
+                        label: candidate.label,
+                        host: candidate.host,
+                        port: 631,
+                        basePath: '/ipp/print',
+                        ssl: false,
+                        verifySsl: false,
+                    },
+                    ignoreApplyDisabled: true,
+                });
+                if (scanController.signal.aborted) {
+                    return { refresh: false };
+                }
+                if (!data) {
+                    continue;
+                }
+                try {
+                    await deferredScanRefresh.save(() =>
+                        this.adapter.savePrinter(data, undefined, {
+                            preservedController: scanController,
+                            deferPoll: true,
+                        }),
+                    );
+                    if (scanController.signal.aborted) {
+                        return { refresh: false };
+                    }
+                    added = true;
+                } catch (error) {
+                    if (scanController.signal.aborted) {
+                        return { refresh: false };
+                    }
+                    await this.showActionError(context, translations.couldNotAdd, error);
+                    if (scanController.signal.aborted) {
+                        return { refresh: false };
+                    }
+                }
+            }
+            await deferredScanRefresh.flush();
+            if (scanController.signal.aborted) {
+                return { refresh: false };
+            }
+            return { refresh: added };
+        } catch (error) {
+            if (scanController.signal.aborted) {
+                return { refresh: false };
+            }
+            await closeProgress();
+            if (scanController.signal.aborted) {
+                return { refresh: false };
+            }
+            if (!(await flushDeferredPrinterScanRefresh(deferredScanRefresh, scanController.signal))) {
+                return { refresh: false };
+            }
+            await this.showActionError(context, scanTranslations.scanFailed, error);
+            if (scanController.signal.aborted) {
+                return { refresh: false };
+            }
+            return { refresh: added };
+        } finally {
+            await closeProgress();
+            this.adapter.releasePrinterScanController(scanController);
+            this.scanInProgress = false;
+        }
     }
 
     private async editPrinter(id: string, context: ActionContext): Promise<{ refresh: 'devices' | 'none' }> {

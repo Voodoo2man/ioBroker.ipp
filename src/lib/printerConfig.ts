@@ -96,6 +96,11 @@ export function getUniquePrinterConfigs(values: unknown[], options: PrinterConfi
     });
 }
 
+export function getNewPrinterConfigs(printers: PrinterConfig[], existingIds: Iterable<string>): PrinterConfig[] {
+    const configuredIds = new Set(Array.from(existingIds, getPrinterIdKey));
+    return printers.filter(printer => !configuredIds.has(getPrinterIdKey(printer.id)));
+}
+
 export function getPrinterConfigErrors(value: unknown, allowLegacyInfoId = false): string[] {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return ['row must be an object'];

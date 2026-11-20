@@ -16,7 +16,7 @@ Node.js 22 or newer, Admin 8.2.0 or newer, and js-controller 7.2.2 or newer are 
 
 ## Configuration
 
-Configure polling interval and request timeout at the top of the adapter configuration page. Add and manage printers below using the Device Manager. Use its **Add printer**, **Edit**, and **Remove** actions; printer cards show the configured host, live connection state, and model when reported. During printer removal or legacy cleanup, the adapter preserves an object subtree if any descendant state has `common.custom` settings and logs a warning. A removed printer is no longer polled, so retained values may become stale; after transferring or removing the custom settings, delete the retained objects manually if desired.
+Configure polling interval and request timeout at the top of the adapter configuration page. Add and manage printers below using the Device Manager. Use its **Add printer**, **Edit**, and **Remove** actions; printer cards show the configured host, live connection state, and model when reported. **Scan for printers** manually checks the adapter host's directly connected private or link-local IPv4 networks for IPP on TCP port `631` at `/ipp/print`, verifies responses with `Get-Printer-Attributes`, and skips configured hosts and the adapter's own addresses. Configured hostnames are resolved with a 500 ms timeout per name; scans are skipped if resolution fails or more than 64 unique configured hostnames need resolution, so a configured printer is not probed accidentally. Each scan is capped at 256 addresses, 16 concurrent probes, and a 1-second timeout per probe; larger networks are sampled and may not be checked in full. Scanning never runs in the background and does not save devices: select candidates and confirm each one in the existing printer form. During printer removal or legacy cleanup, the adapter preserves an object subtree if any descendant state has `common.custom` settings and logs a warning. A removed printer is no longer polled, so retained values may become stale; after transferring or removing the custom settings, delete the retained objects manually if desired.
 
 Printer configurations are stored in backed-up file storage per adapter instance (for example, at `ipp.0/printer-config.json`) so saving other instance settings in Admin cannot overwrite concurrent Device Manager changes. Existing `native.printers` configurations and per-instance legacy configurations stored at `ipp.0.info.printerConfig/printers.json` are migrated automatically on first startup. The former shared `ipp/printer-config.json` file is not migrated automatically because its owning instance cannot be determined safely; restore its printer list through the appropriate instance's Device Manager. Existing printers with the legacy ID `info` remain usable regardless of capitalization; new printers cannot use `info` in any capitalization.
 
@@ -49,6 +49,10 @@ For supply reporting, the adapter combines each `marker-names` entry with the sa
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
+### **WORK IN PROGRESS**
+
+- (Voodoo2man) Added a bounded, manually triggered printer scan with explicit candidate selection and hostname-based exclusion of configured printers.
+
 ### 0.3.0 (2026-11-19)
 
 - (Voodoo2man) Exposed printer online/offline status in ioBroker Admin.

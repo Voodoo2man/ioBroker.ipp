@@ -1,3 +1,12 @@
+export function getPrinterHostKey(host: unknown): string {
+    return typeof host === 'string'
+        ? host
+              .trim()
+              .replace(/^\[|\]$/g, '')
+              .toLowerCase()
+        : '';
+}
+
 export function isValidPrinterHost(host: unknown): host is string {
     if (typeof host !== 'string' || host.trim() === '' || /[/?#@\\\s]/.test(host.trim())) {
         return false;

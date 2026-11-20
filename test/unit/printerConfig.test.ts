@@ -1,6 +1,7 @@
 import { expect } from 'chai';
 import {
     describePrinterConfig,
+    getNewPrinterConfigs,
     getPrinterConfigErrors,
     getUniquePrinterConfigs,
     parsePrinterConfig,
@@ -33,6 +34,16 @@ describe('printerConfig', () => {
         const uppercase = parsePrinterConfig({ id: 'ÄÖÜ-ß', host: 'printer.local' });
         expect(uppercase.errors).to.deep.equal([]);
         expect(uppercase.config?.id).to.equal('AeOeUe-ss');
+    });
+
+    it('selects only newly added printer configs for deferred initialization', () => {
+        const printers = getUniquePrinterConfigs([
+            { id: 'Office', host: 'office.local' },
+            { id: 'Lab', host: 'lab.local' },
+            { id: 'New', host: 'new.local' },
+        ]);
+
+        expect(getNewPrinterConfigs(printers, ['OFFICE', 'Lab']).map(printer => printer.id)).to.deep.equal(['New']);
     });
 
     it('keeps only the first printer when configured IDs collide after normalization or case folding', () => {
