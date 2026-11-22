@@ -16,7 +16,15 @@ Node.js 22 or newer, Admin 8.2.0 or newer, and js-controller 7.2.2 or newer are 
 
 ## Configuration
 
-Configure polling interval and request timeout at the top of the adapter configuration page. Add and manage printers below using the Device Manager. Use its **Add printer**, **Edit**, and **Remove** actions; printer cards show the configured host, live connection state, and model when reported. During printer removal or legacy cleanup, the adapter preserves an object subtree if any descendant state has `common.custom` settings and logs a warning. A removed printer is no longer polled, so retained values may become stale; after transferring or removing the custom settings, delete the retained objects manually if desired.
+Configure polling interval and request timeout at the top of the adapter configuration page. Add and manage printers below using the Device Manager. Use its **Add printer**, **Discover printers**, **Edit**, and **Remove** actions; printer cards show the configured host, live connection state, and model when reported. During printer removal or legacy cleanup, the adapter preserves an object subtree if any descendant state has `common.custom` settings and logs a warning. A removed printer is no longer polled, so retained values may become stale; after transferring or removing the custom settings, delete the retained objects manually if desired.
+
+## Automatic printer discovery
+
+Use **Discover printers** in the Device Manager to run a bounded, manual DNS-SD/mDNS search for `_ipp._tcp` and `_ipps._tcp` services. The scan listens on available network interfaces for up to five seconds (maximum ten seconds), supports IPv4 plus IPv6 multicast where the host exposes it, and reads DNS-SD SRV/TXT data without contacting printers or sending print jobs. A service's SRV target and port are used; a TXT `rp` value supplies the IPP resource path. If `rp` is missing or invalid, the path is left blank and must be entered and checked before saving rather than silently assuming `/ipp/print`.
+
+Results show the advertised name, manufacturer/model when provided, host/IP addresses, port, path, protocol and whether that endpoint is already configured. Devices publishing both IPP and IPPS are grouped when the DNS-SD instance or stable UUID identifies the same printer; IPPS is preferred. Select one or more new endpoints, then review each prefilled configuration in a form before confirming it. Existing configurations are not overwritten; matching endpoints are skipped, and new IDs are generated without case-insensitive collisions or the reserved `info` ID. The adapter preserves the existing TLS certificate-verification default; review or change `Verify TLS certificate` in the configuration form as needed. Canceling the selection or an individual form does not save that printer. A later scan can be started from the same action.
+
+The official `ioBroker.discovery` adapter can propose one shared `ioBroker.ipp` instance when it sees IPP/IPPS services. Its detector runs only when the currently selected adapter repository contains `ipp` (currently available in the latest repository, not stable); this does not affect the IPP adapter's own Device Manager search. The supported discovery interface does not add individual printers to the instance's separate `printer-config.json`; use the Device Manager's **Discover printers** action to select and save those devices. Discovery depends on mDNS being enabled and forwarded between the adapter host and printer network. Firewalls, isolated VLANs, Wi-Fi client isolation, or missing mDNS repeaters can prevent results; the adapter does not fall back to subnet or port scans.
 
 Printer configurations are stored in backed-up file storage per adapter instance (for example, at `ipp.0/printer-config.json`) so saving other instance settings in Admin cannot overwrite concurrent Device Manager changes. Existing `native.printers` configurations and per-instance legacy configurations stored at `ipp.0.info.printerConfig/printers.json` are migrated automatically on first startup. The former shared `ipp/printer-config.json` file is not migrated automatically because its owning instance cannot be determined safely; restore its printer list through the appropriate instance's Device Manager. Existing printers with the legacy ID `info` remain usable regardless of capitalization; new printers cannot use `info` in any capitalization.
 
@@ -49,6 +57,11 @@ For supply reporting, the adapter combines each `marker-names` entry with the sa
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
+### **WORK IN PROGRESS**
+
+- (Voodoo2man) Added manual IPP/IPPS printer discovery with review-before-save in the Device Manager and shared-instance detection support for `ioBroker.discovery`.
+- (Voodoo2man) Fixed Device Manager host and resource-path validation rejecting valid printer endpoints.
+
 ### 0.3.0 (2026-11-19)
 
 - (Voodoo2man) Exposed printer online/offline status in ioBroker Admin.
