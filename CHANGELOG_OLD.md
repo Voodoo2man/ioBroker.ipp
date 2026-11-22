@@ -7,3 +7,6 @@
 ### 0.0.1 (2026-10-27)
 
 - (Voodoo2man) initial release
+## 0.1.0 (2026-11-03)
+
+- (Voodoo2man) Replaced the printer list with Device Manager configuration and split basic settings into a separate tab.

@@ -57,7 +57,7 @@ For supply reporting, the adapter combines each `marker-names` entry with the sa
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
-### **WORK IN PROGRESS**
+### 0.4.0 (2026-11-22)
 
 - (Voodoo2man) Added manual IPP/IPPS printer discovery with review-before-save in the Device Manager and shared-instance detection support for `ioBroker.discovery`.
 
@@ -82,10 +82,6 @@ For supply reporting, the adapter combines each `marker-names` entry with the sa
 ### 0.1.1 (2026-11-07)
 
 - (Voodoo2man) Kept the last toner readings when printers temporarily omit supply data.
-
-### 0.1.0 (2026-11-03)
-
-- (Voodoo2man) Replaced the printer list with Device Manager configuration and split basic settings into a separate tab.
 
 Older release notes are available in [CHANGELOG_OLD.md](CHANGELOG_OLD.md).
 

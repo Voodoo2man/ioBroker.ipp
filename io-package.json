@@ -2,8 +2,21 @@
   "common": {
     "name": "ipp",
     "nogit": true,
-    "version": "0.3.0",
+    "version": "0.4.0",
     "news": {
+      "0.4.0": {
+        "en": "Added manual IPP/IPPS printer discovery with review-before-save in the Device Manager and shared-instance detection support for `ioBroker.discovery`.",
+        "de": "Manuelle IPP/IPPS-Druckersuche mit Prüfen vor Speichern im Gerätemanager und Shared-Instance-Erkennung für `ioBroker.Discovery` hinzugefügt.",
+        "ru": "Добавлено ручное обнаружение принтеров IPP/IPPS с функцией просмотра перед сохранением в диспетчере устройств и поддержкой обнаружения общих экземпляров для `IOBroker.Discovery`.",
+        "pt": "Foi adicionada a detecção manual de impressoras IPP/IPPS com revisão antes de salvar no Device Manager e suporte para `IOBroker.discovery`.",
+        "nl": "Handmatige IPP/IPPS-printerdetectie toegevoegd met beoordeling voor opslaan in de Apparaatbeheerder en ondersteuning voor detectie van gedeelde instanties voor `IOBroker.Discovery`.",
+        "fr": "Ajout de la détection manuelle des imprimantes IPP/IPPS avec révision avant enregistrement dans le Device Manager et prise en charge de la détection des instances partagées pour « IOBroker.Discovery ».",
+        "it": "Aggiunto il rilevamento manuale delle stampanti IPP/IPPS con review before-save in Device Manager e supporto per `IOBroker.discovery`.",
+        "es": "Se ha añadido el descubrimiento manual de impresoras IPP/IPPS con revisar antes de guardar en el Device Manager y la detección de instancias compartidas para «IOBroker.Discovery».",
+        "pl": "Dodano ręczne wykrywanie drukarki IPP/IPPS z przeglądaniem przed zapisaniem w Menedżerze urządzeń i obsługą wykrywania współdzielonych instancji dla `IOBroker.Discovery`.",
+        "uk": "Додано ручне виявлення принтера IPP/IPPS з оглядом перед збереженням у диспетчері пристроїв та підтримкою виявлення спільного екземпляра для `ioBroker.Discovery`.",
+        "zh-cn": "添加了手动 IPP/IPPS 打印机发现功能，在设备管理器中添加了预览后保存功能，并支持 “iobroker.Discovery” 的共享实例检测。"
+      },
       "0.3.0": {
         "en": "Exposed printer online/offline status in ioBroker Admin.\nPreserved custom states in printer objects during cleanup.\nPrevented empty legacy printer rows from causing startup warnings.",
         "de": "Der Online-/Offline-Status von Druckern wird jetzt in ioBroker Admin angezeigt.\nBenutzerdefinierte Zustände in Druckerobjekten bleiben beim Bereinigen erhalten.\nLeere alte Druckereinträge verursachen keine Startwarnungen mehr.",
@@ -81,19 +94,6 @@
         "pl": "Dodano obsługę Node.js 22 i udokumentowane atrybuty zasilania drukarki i licznika.",
         "uk": "Додана підтримка Node.js 22 і задокументована подача принтера і атрибути лічильника.",
         "zh-cn": "添加了 Node.js 22 支持，并记录了打印机供应和计数器属性。"
-      },
-      "0.0.1": {
-        "en": "initial release",
-        "de": "Erstveröffentlichung",
-        "ru": "Начальная версия",
-        "pt": "lançamento inicial",
-        "nl": "Eerste uitgave",
-        "fr": "Première version",
-        "it": "Versione iniziale",
-        "es": "Versión inicial",
-        "pl": "Pierwsze wydanie",
-        "uk": "Початкова версія",
-        "zh-cn": "首次出版"
       }
     },
     "titleLang": {
