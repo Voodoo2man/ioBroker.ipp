@@ -60,6 +60,7 @@ For supply reporting, the adapter combines each `marker-names` entry with the sa
 ### **WORK IN PROGRESS**
 
 - (Voodoo2man) Added manual IPP/IPPS printer discovery with review-before-save in the Device Manager and shared-instance detection support for `ioBroker.discovery`.
+- (Voodoo2man) Fixed Device Manager host and resource-path validation rejecting valid printer endpoints.
 
 ### 0.3.0 (2026-11-19)
 

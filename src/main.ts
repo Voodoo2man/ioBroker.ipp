@@ -15,7 +15,7 @@ import {
     type PrinterConfig,
 } from './lib/printerConfig';
 import { loadPrinterConfigurations, savePrinterConfigurations } from './lib/printerConfigStore';
-import { isValidIppBasePath, isValidPrinterHost } from './lib/printerEndpoint';
+import { getIppBasePathValidatorExpression, getPrinterHostValidatorExpression } from './lib/printerEndpoint';
 import { SerialQueue } from './lib/serialQueue';
 import {
     discoverPrinters,
@@ -477,14 +477,14 @@ function getPrinterFormSchema(
             host: {
                 type: 'text',
                 label: translations.host,
-                validator: `(${isValidPrinterHost.toString()})(data.host)`,
+                validator: getPrinterHostValidatorExpression(),
             },
             port: { type: 'number', label: translations.port, min: 1, max: 65535, default: 631 },
             basePath: {
                 type: 'text',
                 label: translations.ippResourcePath,
                 default: basePathDefault,
-                validator: `(${isValidIppBasePath.toString()})(data.basePath)`,
+                validator: getIppBasePathValidatorExpression(),
             },
             ssl: { type: 'checkbox', label: translations.useTls },
             verifySsl: { type: 'checkbox', label: translations.verifyTlsCertificate, default: false },
