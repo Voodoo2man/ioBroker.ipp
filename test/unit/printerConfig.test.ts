@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import {
+    createUniquePrinterId,
     describePrinterConfig,
     getPrinterConfigErrors,
     getUniquePrinterConfigs,
@@ -47,6 +48,18 @@ describe('printerConfig', () => {
         expect(printers.map(printer => printer.id)).to.deep.equal(['Buero', 'Printer', 'Other']);
         expect(printers[0].host).to.equal('first.local');
         expect(printers[1].host).to.equal('uppercase.local');
+    });
+
+    it('creates deterministic valid IDs that avoid case-insensitive collisions and the reserved info ID', () => {
+        const endpoint = { host: 'printer.local', port: 631, basePath: '/ipp/print', ssl: false };
+
+        expect(createUniquePrinterId('Büro Laser', endpoint, [])).to.equal('buero_laser');
+        expect(createUniquePrinterId('Office', endpoint, ['OFFICE'])).to.equal(
+            createUniquePrinterId('Office', endpoint, ['office']),
+        );
+        expect(createUniquePrinterId('Office', endpoint, ['OFFICE'])).to.match(/^office-[a-f0-9]{6}$/);
+        expect(createUniquePrinterId('Info', endpoint, [])).to.equal('printer_info');
+        expect(createUniquePrinterId('打印机', endpoint, [])).to.equal('printer');
     });
 
     it('rejects changing a printer ID while editing', () => {

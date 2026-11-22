@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { PrinterEndpoint } from './printerIpp';
 import { isValidIppBasePath, isValidPrinterHost } from './printerEndpoint';
 
@@ -38,6 +39,40 @@ function normalizePrinterId(value: string): string {
 
 export function getPrinterIdKey(value: string): string {
     return normalizePrinterId(value).toLowerCase();
+}
+
+export function createUniquePrinterId(
+    label: string,
+    endpoint: Pick<PrinterConfig, 'host' | 'port' | 'basePath' | 'ssl'>,
+    existingIds: Iterable<string>,
+): string {
+    const ids = new Set([...existingIds].map(getPrinterIdKey));
+    const normalizedLabel = normalizePrinterId(label)
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^A-Za-z0-9_-]+/g, '_')
+        .replace(/^[-_]+|[-_]+$/g, '')
+        .toLowerCase();
+    let base = normalizedLabel.slice(0, 32) || 'printer';
+    if (getPrinterIdKey(base) === 'info') {
+        base = 'printer_info';
+    }
+    if (!ids.has(getPrinterIdKey(base))) {
+        return base;
+    }
+
+    const fingerprint = createHash('sha256')
+        .update(`${endpoint.host.toLowerCase()}|${endpoint.port}|${endpoint.basePath ?? ''}|${endpoint.ssl === true}`)
+        .digest('hex')
+        .slice(0, 6);
+    let suffix = `-${fingerprint}`;
+    let candidate = `${base.slice(0, 32 - suffix.length)}${suffix}`;
+    let collision = 2;
+    while (ids.has(getPrinterIdKey(candidate))) {
+        suffix = `-${fingerprint}-${collision++}`;
+        candidate = `${base.slice(0, 32 - suffix.length)}${suffix}`;
+    }
+    return candidate;
 }
 
 export function parsePrinterConfig(
