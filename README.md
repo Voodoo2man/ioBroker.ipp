@@ -3,8 +3,8 @@
 ![Network printer monitoring illustration](admin/ipp-banner.jpg)
 
 [![NPM version](https://img.shields.io/npm/v/iobroker.ipp.svg)](https://www.npmjs.com/package/iobroker.ipp)
-[![Downloads](https://img.shields.io/npm/dm/iobroker.ipp.svg)](https://www.npmjs.com/package/iobroker.ipp)
-
+![Number of Installations](http://iobroker.live/badges/ipp-stable.svg)
+![Number of Installations](http://iobroker.live/badges/ipp-installed.svg)
 
 ## ioBroker Internet Printing Protocol Adapter
 
