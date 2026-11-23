@@ -51,7 +51,7 @@ Each configured printer gets a device with `status`, `supplies`, `counters`, and
 For supply reporting, the adapter combines each `marker-names` entry with the same-position `marker-levels` entry; recognized `marker-types` and `marker-colors` provide an English display name, while the original marker name is retained for the existing state ID. If no recognized type is available, the display name is `Supply N`. A supply is skipped if its name or percentage value is missing, invalid, or outside 0-100. Counters map from `pages-completed`, `impressions-completed`, and `media-sheets-completed` to `pages_completed`, `impressions_completed`, and `media_sheets_completed`. When reporting missing values, include the printer model and firmware, which of these IPP attributes the printer returns, and the raw values or state IDs that are absent.
 
 <a href="https://www.paypal.com/donate/?hosted_button_id=3RJQGSJNRSHUJ">
-  <img src=".github/Donate.png" alt="Mit PayPal spenden" width="220">
+  <img src=".github/Donate_eng.png" alt="Mit PayPal spenden" width="220">
 </a>
 
 ## Changelog
