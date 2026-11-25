@@ -62,7 +62,7 @@ Each printer has `status`, `supplies`, `counters`, and `details` channels.
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
-### **WORK IN PROGRESS**
+### 0.4.1 (2026-11-25)
 
 - (Voodoo2man) Improved discovery across IPv4 addresses and scoped IPv6 interfaces, matched DNS-SD names case-insensitively, and combined split mDNS service records with diagnostics.
 
@@ -87,10 +87,6 @@ Each printer has `status`, `supplies`, `counters`, and `details` channels.
 
 - (Voodoo2man) Hardened IPP response handling, corrected supply percentages and state clearing, preserved legacy printer configurations, normalized printer IDs, refreshed state metadata, localized Device Manager actions, scheduled polls after each completed cycle, and isolated Device Manager storage from Admin saves.
 - (Voodoo2man) Aligned saved endpoint validation with polling, made colliding dynamic detail IDs unique, and removed unused UI translation entries.
-
-### 0.1.1 (2026-11-07)
-
-- (Voodoo2man) Kept the last toner readings when printers temporarily omit supply data.
 
 Older release notes are available in [CHANGELOG_OLD.md](CHANGELOG_OLD.md).
 

@@ -2,8 +2,21 @@
   "common": {
     "name": "ipp",
     "nogit": true,
-    "version": "0.4.0",
+    "version": "0.4.1",
     "news": {
+      "0.4.1": {
+        "en": "Improved discovery across IPv4 addresses and scoped IPv6 interfaces, matched DNS-SD names case-insensitively, and combined split mDNS service records with diagnostics.",
+        "de": "Verbesserte automatische Druckersuche über mehrere IPv4-Adressen und IPv6-Interfaces, Erkennung von DNS-SD-Namen ohne Beachtung der Groß-/Kleinschreibung sowie Zusammenführung verteilter mDNS-Diensteinträge mit Diagnoseausgaben.",
+        "ru": "Улучшенное обнаружение адресов IPv4 и интерфейсов IPv6 с ограниченной областью действия, сопоставление имен DNS-SD без учета регистра и сочетание разделенных служебных записей mDNS с диагностикой.",
+        "pt": "Melhor descoberta em endereços IPv4 e interfaces IPv6 com escopo, combinação de nomes DNS-SD sem distinção entre maiúsculas e minúsculas e diagnósticos.",
+        "nl": "Verbeterde detectie van IPv4-adressen en IPv6-interfaces met een bereik, zonder hoofdlettergevoelig op elkaar afgestemde DNS-SD-namen en een combinatie van gesplitste mDNS-servicerecords met diagnostiek.",
+        "fr": "Découverte améliorée des adresses IPv4 et des interfaces IPv6 étendues, mise en correspondance des noms DNS-SD sans distinction majuscules/minuscules et enregistrements de service mDNS séparés et diagnostics.",
+        "it": "Scoperta migliorata tra indirizzi IPv4 e interfacce IPv6 con ambito, nomi DNS-SD abbinati senza distinzione tra maiuscole e minuscole e record di servizio mDNS divisi con diagnostica.",
+        "es": "Se mejoró la detección en direcciones IPv4 e interfaces IPv6 con ámbito, se compararon los nombres DNS-SD sin distinguir mayúsculas y minúsculas y se combinaron los registros mDNS divididos con diagnósticos.",
+        "pl": "Ulepszono wykrywanie adresów IPv4 i zakresowych interfejsów IPv6, dopasowywanie nazw DNS-SD w sposób niewrażliwy na wielkość liter i połączenie podzielonych rekordów usług mDNS z diagnostyką.",
+        "uk": "Покращено виявлення між адресами IPv4 та інтерфейсами IPv6, узгодження назв DNS-SD без урахування регістру та поєднання розділених записів служб mDNS з діагностикою.",
+        "zh-cn": "改进了对 IPv4 地址和限定范围 IPv6 接口的发现，不区分大小写地匹配 DNS-SD 名称，并将拆分的 mDNS 服务记录与诊断相结合。"
+      },
       "0.4.0": {
         "en": "Added manual IPP/IPPS printer discovery with review-before-save in the Device Manager and shared-instance detection support for `ioBroker.discovery`.",
         "de": "Manuelle IPP/IPPS-Druckersuche mit Prüfen vor Speichern im Gerätemanager und Shared-Instance-Erkennung für `ioBroker.Discovery` hinzugefügt.",
@@ -81,19 +94,6 @@
         "pl": "Wymieniono listę drukarek konfiguracją Menedżera urządzeń i podzieliłem podstawowe ustawienia na osobną kartę.",
         "uk": "Замінив список принтерів конфігурацією Диспетчера пристроїв і розділив основні налаштування на окрему вкладку.",
         "zh-cn": "将打印机列表替换为设备管理器配置，并将基本设置拆分为一个单独的选项卡。"
-      },
-      "0.0.2": {
-        "en": "Added Node.js 22 support and documented printer supply and counter attributes.",
-        "de": "Support für Node.js 22 hinzugefügt und Druckerbedarf und Zähler dokumentiert.",
-        "ru": "Добавлена поддержка Node.js 22 и документированные атрибуты расходных материалов и счетчиков принтеров.",
-        "pt": "Foi adicionado o suporte ao Node.js 22 e documentou a fonte e o contador.",
-        "nl": "Ondersteuning voor Node.js 22 toegevoegd en de printerbenodigdheden en tellerkenmerken gedocumenteerd.",
-        "fr": "Ajout du support de Node.js 22 et des attributs d'imprimante et de compteur documentés.",
-        "it": "Aggiunto il supporto per Node.js 22 e attributi di stampa e contatore.",
-        "es": "Se ha añadido Node.js 22 y ha documentado los atributos de suministro y contador.",
-        "pl": "Dodano obsługę Node.js 22 i udokumentowane atrybuty zasilania drukarki i licznika.",
-        "uk": "Додана підтримка Node.js 22 і задокументована подача принтера і атрибути лічильника.",
-        "zh-cn": "添加了 Node.js 22 支持，并记录了打印机供应和计数器属性。"
       }
     },
     "titleLang": {
