@@ -28,6 +28,11 @@ const ippService = (overrides: Record<string, unknown> = {}): Record<string, unk
 
 class FakeClient extends EventEmitter {
     public destroyed = false;
+    public queries: Array<{ name: string; type: 'SRV' | 'TXT' }> = [];
+
+    public query(name: string, type: 'SRV' | 'TXT'): void {
+        this.queries.push({ name, type });
+    }
 
     public destroy(callback?: () => void): void {
         this.destroyed = true;
@@ -109,6 +114,165 @@ describe('printerDiscovery', () => {
         expect(result.printers[0].addresses).to.include('2001:db8::44');
     });
 
+    it('matches DNS-SD service type and protocol without case sensitivity', async () => {
+        const options = scannerOptions({ ipp: [ippService({ type: 'IPP', protocol: 'TCP' })] });
+        const result = await discoverPrinters(options);
+
+        expect(result.printers).to.have.length(1);
+        expect(result.printers[0]).to.include({ name: 'Office Printer', ssl: false });
+    });
+
+    it('reports mDNS response and parsed service counts through diagnostics', async () => {
+        const options = scannerOptions({ ipp: [ippService()] });
+        const diagnostics: string[] = [];
+        options.createClient = () => {
+            const client = new FakeClient();
+            options.clients.push(client);
+            setImmediate(() =>
+                client.emit('response', {
+                    answers: [{ name: '_ipp._tcp.local.', type: 'PTR' }],
+                }),
+            );
+            return client;
+        };
+        options.onDiagnostic = message => diagnostics.push(message);
+
+        const result = await discoverPrinters(options);
+
+        expect(result.printers).to.have.length(1);
+        expect(diagnostics).to.have.length(1);
+        expect(diagnostics[0]).to.contain('response packets=1');
+        expect(diagnostics[0]).to.contain('IPP/IPPS PTRs=1');
+        expect(diagnostics[0]).to.contain('service announcements=1, accepted=1');
+    });
+
+    it('assembles an IPP service when PTR and SRV/TXT arrive in separate mDNS responses', async () => {
+        const options = scannerOptions({});
+        options.createClient = () => {
+            const client = new FakeClient();
+            options.clients.push(client);
+            setImmediate(() => {
+                client.emit('response', {
+                    answers: [
+                        {
+                            name: '_ipp._tcp.local.',
+                            type: 'PTR',
+                            data: 'Office Printer._ipp._tcp.local.',
+                            ttl: 120,
+                        },
+                    ],
+                });
+                setImmediate(() => {
+                    client.emit('response', {
+                        answers: [
+                            {
+                                name: 'Office Printer._ipp._tcp.local.',
+                                type: 'SRV',
+                                data: { target: 'printer.local.', port: 8631 },
+                                ttl: 120,
+                            },
+                            {
+                                name: 'Office Printer._ipp._tcp.local.',
+                                type: 'TXT',
+                                data: [Buffer.from('rp=printers/office'), Buffer.from('ty=Laser 9000')],
+                                ttl: 120,
+                            },
+                            { name: 'printer.local.', type: 'A', data: '192.0.2.44', ttl: 120 },
+                        ],
+                    });
+                });
+            });
+            return client;
+        };
+
+        const result = await discoverPrinters(options);
+
+        expect(result.printers).to.have.length(1);
+        expect(result.printers[0]).to.include({
+            name: 'Office Printer',
+            host: 'printer.local',
+            port: 8631,
+            basePath: '/printers/office',
+            model: 'Laser 9000',
+        });
+        expect(result.printers[0].addresses).to.include('192.0.2.44');
+        expect(options.clients[0].queries).to.deep.equal([
+            { name: 'Office Printer._ipp._tcp.local.', type: 'SRV' },
+            { name: 'Office Printer._ipp._tcp.local.', type: 'TXT' },
+        ]);
+    });
+
+    it('keeps DNS-SD records for the same service instance scoped to each interface', async () => {
+        const endpoints = [
+            { host: 'printer-en0.local.', port: 8631, address: '192.0.2.44', resourcePath: 'printers/en0' },
+            { host: 'printer-en1.local.', port: 631, address: '198.51.100.44', resourcePath: 'printers/en1' },
+        ];
+        const options = scannerOptions(
+            {},
+            {
+                networkInterfaces: () => ({
+                    en0: [{ address: '192.0.2.10', family: 'IPv4', internal: false }],
+                    en1: [{ address: '198.51.100.10', family: 'IPv4', internal: false }],
+                }),
+            },
+        );
+        options.createClient = () => {
+            const client = new FakeClient();
+            const endpoint = endpoints[options.clients.length];
+            options.clients.push(client);
+            setImmediate(() => {
+                client.emit('response', {
+                    answers: [
+                        {
+                            name: '_ipp._tcp.local.',
+                            type: 'PTR',
+                            data: 'Shared Printer._ipp._tcp.local.',
+                            ttl: 120,
+                        },
+                    ],
+                });
+                client.emit('response', {
+                    answers: [
+                        {
+                            name: 'Shared Printer._ipp._tcp.local.',
+                            type: 'SRV',
+                            data: { target: endpoint.host, port: endpoint.port },
+                            ttl: 120,
+                        },
+                        {
+                            name: 'Shared Printer._ipp._tcp.local.',
+                            type: 'TXT',
+                            data: [Buffer.from(`rp=${endpoint.resourcePath}`)],
+                            ttl: 120,
+                        },
+                        { name: endpoint.host, type: 'A', data: endpoint.address, ttl: 120 },
+                    ],
+                });
+            });
+            return client;
+        };
+
+        const result = await discoverPrinters(options);
+
+        expect(result.printers).to.have.length(2);
+        expect(
+            result.printers.map(({ host, port, addresses, basePath }) => ({ host, port, addresses, basePath })),
+        ).to.deep.equal([
+            {
+                host: 'printer-en0.local',
+                port: 8631,
+                addresses: ['192.0.2.44'],
+                basePath: '/printers/en0',
+            },
+            {
+                host: 'printer-en1.local',
+                port: 631,
+                addresses: ['198.51.100.44'],
+                basePath: '/printers/en1',
+            },
+        ]);
+    });
+
     it('recognizes IPPS and prefers it when the same printer also advertises IPP', async () => {
         const options = scannerOptions({
             ipp: [ippService({ txt: { rp: 'ipp/print', UUID: 'urn:uuid:12345678-1234-1234-1234-123456789abc' } })],
@@ -165,16 +329,21 @@ describe('printerDiscovery', () => {
         expect(JSON.stringify(result.printers)).not.to.include('not-forwarded');
     });
 
-    it('scans every available IPv4 interface and available IPv6 interfaces', async () => {
+    it('scans every IPv4 address and scopes IPv6 clients to their interfaces', async () => {
         const options = scannerOptions(
             {},
             {
                 networkInterfaces: () => ({
                     en0: [
                         { address: '192.0.2.10', family: 'IPv4', internal: false },
+                        { address: '192.0.2.11', family: 'IPv4', internal: false },
                         { address: 'fe80::10', family: 'IPv6', internal: false },
                     ],
-                    en1: [{ address: '198.51.100.10', family: 'IPv4', internal: false }],
+                    en1: [
+                        { address: '198.51.100.10', family: 'IPv4', internal: false },
+                        { address: '192.0.2.11', family: 'IPv4', internal: false },
+                        { address: 'fe80::11%en9', family: 'IPv6', internal: false },
+                    ],
                     lo0: [{ address: '127.0.0.1', family: 'IPv4', internal: true }],
                 }),
             },
@@ -190,11 +359,15 @@ describe('printerDiscovery', () => {
         expect(result.printers).to.deep.equal([]);
         expect(clientOptions.filter(option => option.type === 'udp4').map(option => option.interface)).to.deep.equal([
             '192.0.2.10',
+            '192.0.2.11',
             '198.51.100.10',
         ]);
-        expect(clientOptions.filter(option => option.type === 'udp6')).to.have.length(1);
-        expect(options.clients).to.have.length(3);
-        expect(options.browsers).to.have.length(6);
+        expect(clientOptions.filter(option => option.type === 'udp6').map(option => option.interface)).to.deep.equal([
+            'fe80::10%en0',
+            'fe80::11%en9',
+        ]);
+        expect(options.clients).to.have.length(5);
+        expect(options.browsers).to.have.length(10);
     });
 
     it('returns a valid empty result after a successful scan with no printer announcements', async () => {

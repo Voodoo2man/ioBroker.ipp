@@ -20,7 +20,7 @@ Configure polling interval and request timeout at the top of the adapter configu
 
 ## Automatic printer discovery
 
-Use **Discover printers** in the Device Manager to run a bounded, manual DNS-SD/mDNS search for `_ipp._tcp` and `_ipps._tcp` services. The scan listens on available network interfaces for up to five seconds (maximum ten seconds), supports IPv4 plus IPv6 multicast where the host exposes it, and reads DNS-SD SRV/TXT data without contacting printers or sending print jobs. A service's SRV target and port are used; a TXT `rp` value supplies the IPP resource path. If `rp` is missing or invalid, the path is left blank and must be entered and checked before saving rather than silently assuming `/ipp/print`.
+Use **Discover printers** in the Device Manager to run a bounded, manual DNS-SD/mDNS search for `_ipp._tcp` and `_ipps._tcp` services. The scan listens on available network interfaces for up to five seconds (maximum ten seconds), supports IPv4 plus IPv6 multicast where the host exposes it, and reads DNS-SD SRV/TXT data without contacting printers or sending print jobs. The scan requests SRV/TXT details for advertised service instances and combines records received across mDNS responses. A service's SRV target and port are used; a TXT `rp` value supplies the IPP resource path. If `rp` is missing or invalid, the path is left blank and must be entered and checked before saving rather than silently assuming `/ipp/print`. With debug logging enabled, each scan logs counts of mDNS responses, IPP/IPPS service records, and accepted announcements to help distinguish network visibility from unsupported service data.
 
 Results show the advertised name, manufacturer/model when provided, host/IP addresses, port, path, protocol and whether that endpoint is already configured. Devices publishing both IPP and IPPS are grouped when the DNS-SD instance or stable UUID identifies the same printer; IPPS is preferred. Select one or more new endpoints, then review each prefilled configuration in a form before confirming it. Existing configurations are not overwritten; matching endpoints are skipped, and new IDs are generated without case-insensitive collisions or the reserved `info` ID. The adapter preserves the existing TLS certificate-verification default; review or change `Verify TLS certificate` in the configuration form as needed. Canceling the selection or an individual form does not save that printer. A later scan can be started from the same action.
 
@@ -59,6 +59,10 @@ For supply reporting, the adapter combines each `marker-names` entry with the sa
     Placeholder for the next version (at the beginning of the line):
     ### **WORK IN PROGRESS**
 -->
+### **WORK IN PROGRESS**
+
+- (Voodoo2man) Improved discovery across IPv4 addresses and scoped IPv6 interfaces, matched DNS-SD names case-insensitively, and combined split mDNS service records with diagnostics.
+
 ### 0.4.0 (2026-11-22)
 
 - (Voodoo2man) Added manual IPP/IPPS printer discovery with review-before-save in the Device Manager and shared-instance detection support for `ioBroker.discovery`.
