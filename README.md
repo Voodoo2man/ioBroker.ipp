@@ -51,7 +51,7 @@ Each printer has `status`, `supplies`, `counters`, and `details` channels.
 - **Status:** `online` is always available; model, message, and numeric state are published when supported. An unreachable printer has state `0` (`off`), and its last readings are retained while offline. Model values use the complete `printer-make-and-model`; messages use English IPP reason/state labels.
 - **Supplies:** Toner and ink levels use IPP `marker-levels` directly as percentages. Display names use recognized marker type/color labels or fall back to `Supply N`.
 - **Counters:** `pages_completed`, `impressions_completed`, and `media_sheets_completed` are created only when reported. Missing counter and detail values are cleared after a successful poll, including after a restart.
-- **Details:** Returned scalar numeric, boolean, and string IPP attributes are exposed unless already represented by another state; arrays and objects are omitted. State IDs are derived from attribute names and may change for non-canonical names or collisions.
+- **Details:** Returned scalar numeric, boolean, and string attributes not already represented elsewhere are exposed, except attributes the adapter explicitly excludes (such as capability/default fields and raw marker values); arrays and objects are omitted. IDs derive from attribute names and may change for non-canonical names or collisions.
 
 <a href="https://www.paypal.com/donate/?hosted_button_id=3RJQGSJNRSHUJ">
   <img src=".github/Donate_eng.png" alt="Mit PayPal spenden" width="220">
