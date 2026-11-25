@@ -8,9 +8,11 @@ import { isValidIppBasePath, isValidPrinterHost } from './printerEndpoint';
 const DEFAULT_SCAN_TIMEOUT_MS = 5000;
 const MIN_SCAN_TIMEOUT_MS = 100;
 const MAX_SCAN_TIMEOUT_MS = 10000;
-const MAX_IPV4_INTERFACES = 16;
+const MAX_IPV4_ADDRESSES = 16;
 const MAX_IPV6_INTERFACES = 16;
 const MAX_SERVICE_ANNOUNCEMENTS = 512;
+const MAX_CACHED_DNS_RECORDS = 2048;
+const MAX_DNS_DETAIL_QUERIES = 100;
 const MAX_SCAN_WARNINGS = 20;
 const MAX_PRINTER_ADDRESSES = 32;
 const MAX_PRINTER_RESULTS = 100;
@@ -32,6 +34,8 @@ type MdnsOptions = {
 
 interface MdnsClient {
     on(event: 'error' | 'warning', listener: (error: unknown) => void): this;
+    on(event: 'response', listener: (packet: unknown) => void): this;
+    query?(name: string, type: 'SRV' | 'TXT'): void;
     destroy(callback?: (error?: Error) => void): void;
 }
 
@@ -63,6 +67,7 @@ export interface PrinterDiscoveryOptions {
     networkInterfaces?: () => NetworkAddressMap;
     createClient?: (options: MdnsOptions) => MdnsClient;
     createBrowser?: (client: MdnsClient, type: ServiceType) => ServiceBrowser;
+    onDiagnostic?: (message: string) => void;
 }
 
 interface ParsedService extends Omit<DiscoveredPrinter, 'key'> {
@@ -91,8 +96,14 @@ function getMdnsOptions(interfaces: NetworkAddressMap): MdnsOptions[] {
     const addresses = Object.entries(interfaces);
     const ipv4Addresses = new Set<string>();
     for (const [, records] of addresses) {
-        const address = records?.find(isIpv4Address);
-        if (address && ipv4Addresses.size < MAX_IPV4_INTERFACES && !ipv4Addresses.has(address.address)) {
+        for (const address of records ?? []) {
+            if (
+                !isIpv4Address(address) ||
+                ipv4Addresses.size >= MAX_IPV4_ADDRESSES ||
+                ipv4Addresses.has(address.address)
+            ) {
+                continue;
+            }
             ipv4Addresses.add(address.address);
             options.push({
                 type: 'udp4',
@@ -106,14 +117,14 @@ function getMdnsOptions(interfaces: NetworkAddressMap): MdnsOptions[] {
     }
 
     let ipv6InterfaceCount = 0;
-    for (const [, records] of addresses) {
+    for (const [interfaceName, records] of addresses) {
         const address = records?.find(isIpv6Address);
         if (address && ipv6InterfaceCount < MAX_IPV6_INTERFACES) {
             ipv6InterfaceCount++;
             options.push({
                 type: 'udp6',
                 ip: IPV6_MDNS_ADDRESS,
-                interface: address.address.split('%')[0],
+                interface: address.address.includes('%') ? address.address : `${address.address}%${interfaceName}`,
                 bind: '::',
                 port: 5353,
                 reuseAddr: true,
@@ -232,7 +243,12 @@ function parseService(value: unknown, expectedType: ServiceType): ParsedService 
         return undefined;
     }
     const service = value as Record<string, unknown>;
-    if (service.type !== expectedType || service.protocol !== 'tcp') {
+    if (
+        typeof service.type !== 'string' ||
+        service.type.toLowerCase() !== expectedType ||
+        typeof service.protocol !== 'string' ||
+        service.protocol.toLowerCase() !== 'tcp'
+    ) {
         return undefined;
     }
     const name = cleanTxtText(service.name, 128);
@@ -264,6 +280,97 @@ function parseService(value: unknown, expectedType: ServiceType): ParsedService 
         ssl: expectedType === 'ipps',
         identity,
     };
+}
+
+type CachedDnsRecords = Map<string, Record<string, unknown>[]>;
+
+interface ClientDiscoveryState {
+    client: MdnsClient;
+    failed: boolean;
+    queriedInstances: Set<string>;
+    dnsRecordCache: CachedDnsRecords;
+    cachedRecordIds: Map<string, Record<string, unknown>>;
+}
+
+function normalizeDnsName(value: string): string {
+    return value.toLowerCase().replace(/\.$/, '');
+}
+
+function cachedDnsRecords(cache: CachedDnsRecords, name: string, type: string): Record<string, unknown>[] {
+    return cache.get(`${normalizeDnsName(name)}|${type.toLowerCase()}`) ?? [];
+}
+
+function getServiceInstanceName(value: unknown, type: ServiceType): string | undefined {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    const name = value.trim().replace(/\.$/, '');
+    const suffix = `._${type}._tcp.local`;
+    if (!name.toLowerCase().endsWith(suffix)) {
+        return undefined;
+    }
+    return cleanTxtText(name.slice(0, -suffix.length), 128);
+}
+
+function decodeDnsTxt(value: unknown): Record<string, string> {
+    const txt = Object.create(null) as Record<string, string>;
+    if (!Array.isArray(value)) {
+        return txt;
+    }
+    for (const entry of value) {
+        const text = Buffer.isBuffer(entry) ? entry.toString('utf8') : typeof entry === 'string' ? entry : undefined;
+        const separator = text?.indexOf('=') ?? -1;
+        if (text && separator > 0) {
+            txt[text.slice(0, separator)] = text.slice(separator + 1);
+        }
+    }
+    return txt;
+}
+
+function parseCachedServices(cache: CachedDnsRecords): ParsedService[] {
+    const discovered = new Map<string, ParsedService>();
+    for (const type of SERVICE_TYPES) {
+        const serviceName = `_${type}._tcp.local`;
+        for (const ptrRecord of cachedDnsRecords(cache, serviceName, 'PTR')) {
+            const instance = ptrRecord.data;
+            const name = getServiceInstanceName(instance, type);
+            if (!name || typeof instance !== 'string') {
+                continue;
+            }
+            const srvRecord = cachedDnsRecords(cache, instance, 'SRV').find(record => {
+                return (
+                    record.data !== null &&
+                    typeof record.data === 'object' &&
+                    typeof (record.data as Record<string, unknown>).target === 'string'
+                );
+            });
+            if (!srvRecord || !srvRecord.data || typeof srvRecord.data !== 'object') {
+                continue;
+            }
+            const srv = srvRecord.data as Record<string, unknown>;
+            const target = srv.target as string;
+            const txtRecord = cachedDnsRecords(cache, instance, 'TXT')[0];
+            const addresses = ['A', 'AAAA'].flatMap(recordType =>
+                cachedDnsRecords(cache, target, recordType).map(record => record.data),
+            );
+            const parsed = parseService(
+                {
+                    name,
+                    type,
+                    protocol: 'tcp',
+                    host: target,
+                    port: srv.port,
+                    addresses,
+                    txt: decodeDnsTxt(txtRecord?.data),
+                },
+                type,
+            );
+            if (parsed) {
+                discovered.set(`${type}|${normalizeDnsName(instance)}`, parsed);
+            }
+        }
+    }
+    return [...discovered.values()];
 }
 
 function hostAlias(host: string): string {
@@ -470,14 +577,21 @@ export async function discoverPrinters(options: PrinterDiscoveryOptions = {}): P
 
     const services: ParsedService[] = [];
     const warnings: string[] = [];
-    const clients: Array<{ client: MdnsClient; failed: boolean }> = [];
+    const clients: ClientDiscoveryState[] = [];
     const browsers: ServiceBrowser[] = [];
+    let responsePackets = 0;
+    let responseRecords = 0;
+    let ippServiceRecords = 0;
+    let cachedDnsRecordCount = 0;
+    let cachedServiceCandidates = 0;
+    let cacheLimitReported = false;
 
     return new Promise<PrinterDiscoveryResult>((resolve, reject) => {
         let settled = false;
         let initializing = true;
         let abortRequested = false;
         let receivedAnnouncements = 0;
+        let acceptedAnnouncements = 0;
         let timeout: NodeJS.Timeout | undefined;
         async function cleanup(): Promise<void> {
             if (timeout) {
@@ -506,16 +620,31 @@ export async function discoverPrinters(options: PrinterDiscoveryOptions = {}): P
                 ),
             );
         }
+        function reportDiagnostic(): void {
+            const ipv4Sockets = clientOptions.filter(option => option.type === 'udp4').length;
+            const ipv6Sockets = clientOptions.length - ipv4Sockets;
+            const failedSockets = clients.filter(client => client.failed).length;
+            try {
+                options.onDiagnostic?.(
+                    `mDNS discovery: IPv4 sockets=${ipv4Sockets}, IPv6 sockets=${ipv6Sockets}, response packets=${responsePackets}, DNS records=${responseRecords}, IPP/IPPS PTRs=${ippServiceRecords}, service announcements=${receivedAnnouncements}, accepted=${acceptedAnnouncements}, cached endpoints=${cachedServiceCandidates}, failed sockets=${failedSockets}, warnings=${warnings.length}.`,
+                );
+            } catch {
+                // Diagnostics must not affect discovery results.
+            }
+        }
         async function finish(error?: Error): Promise<void> {
             if (settled) {
                 return;
             }
             settled = true;
             await cleanup();
+            const cachedServices = clients.flatMap(clientState => parseCachedServices(clientState.dnsRecordCache));
+            cachedServiceCandidates = cachedServices.length;
+            reportDiagnostic();
             if (error) {
                 reject(error);
             } else {
-                const printers = mergeServices(services);
+                const printers = mergeServices([...services, ...cachedServices]);
                 if (printers.length > MAX_PRINTER_RESULTS) {
                     addWarning(warnings, `Only the first ${MAX_PRINTER_RESULTS} discovered printers are shown`);
                 }
@@ -540,13 +669,108 @@ export async function discoverPrinters(options: PrinterDiscoveryOptions = {}): P
                     addWarning(warnings, `Could not start ${clientOption.type} mDNS discovery: ${errorDetail(error)}`);
                     continue;
                 }
-                const clientState = { client, failed: false };
+                const clientState: ClientDiscoveryState = {
+                    client,
+                    failed: false,
+                    queriedInstances: new Set<string>(),
+                    dnsRecordCache: new Map(),
+                    cachedRecordIds: new Map(),
+                };
                 clients.push(clientState);
                 client.on('error', error => {
                     clientState.failed = true;
                     addWarning(warnings, `A ${clientOption.type} mDNS socket failed: ${errorDetail(error)}`);
                     if (!initializing && clients.every(candidate => candidate.failed)) {
                         void finish(new Error('All mDNS discovery sockets failed'));
+                    }
+                });
+                client.on('response', packet => {
+                    if (!packet || typeof packet !== 'object') {
+                        return;
+                    }
+                    responsePackets++;
+                    const response = packet as Record<string, unknown>;
+                    for (const sectionName of ['answers', 'additionals', 'authorities']) {
+                        const section = response[sectionName];
+                        if (!Array.isArray(section)) {
+                            continue;
+                        }
+                        responseRecords += section.length;
+                        for (const value of section) {
+                            if (!value || typeof value !== 'object') {
+                                continue;
+                            }
+                            const record = value as Record<string, unknown>;
+                            const recordType = String(record.type).toUpperCase();
+                            if (!['PTR', 'SRV', 'TXT', 'A', 'AAAA'].includes(recordType)) {
+                                continue;
+                            }
+                            const name = typeof record.name === 'string' ? normalizeDnsName(record.name) : '';
+                            if (!name || name.length > 255) {
+                                continue;
+                            }
+                            const cacheKey = `${name}|${recordType.toLowerCase()}`;
+                            let dataKey: string;
+                            try {
+                                dataKey = JSON.stringify(record.data) ?? String(record.data);
+                            } catch {
+                                continue;
+                            }
+                            const recordKey = `${cacheKey}|${dataKey}`;
+                            const cachedRecord = clientState.cachedRecordIds.get(recordKey);
+                            if (record.ttl === 0) {
+                                if (cachedRecord) {
+                                    clientState.cachedRecordIds.delete(recordKey);
+                                    const cachedRecords = clientState.dnsRecordCache.get(cacheKey);
+                                    if (cachedRecords) {
+                                        const index = cachedRecords.indexOf(cachedRecord);
+                                        if (index !== -1) {
+                                            cachedRecords.splice(index, 1);
+                                            cachedDnsRecordCount--;
+                                        }
+                                        if (cachedRecords.length === 0) {
+                                            clientState.dnsRecordCache.delete(cacheKey);
+                                        }
+                                    }
+                                }
+                                continue;
+                            }
+                            if (!cachedRecord) {
+                                if (cachedDnsRecordCount >= MAX_CACHED_DNS_RECORDS) {
+                                    if (!cacheLimitReported) {
+                                        addWarning(warnings, 'The mDNS record cache limit was reached');
+                                        cacheLimitReported = true;
+                                    }
+                                    continue;
+                                }
+                                const cachedRecords = clientState.dnsRecordCache.get(cacheKey) ?? [];
+                                cachedRecords.push(record);
+                                clientState.dnsRecordCache.set(cacheKey, cachedRecords);
+                                clientState.cachedRecordIds.set(recordKey, record);
+                                cachedDnsRecordCount++;
+                            }
+                            if (recordType === 'PTR' && (name === '_ipp._tcp.local' || name === '_ipps._tcp.local')) {
+                                ippServiceRecords++;
+                                const type: ServiceType = name === '_ipp._tcp.local' ? 'ipp' : 'ipps';
+                                if (
+                                    typeof record.data === 'string' &&
+                                    getServiceInstanceName(record.data, type) &&
+                                    !clientState.queriedInstances.has(normalizeDnsName(record.data)) &&
+                                    clientState.queriedInstances.size < MAX_DNS_DETAIL_QUERIES
+                                ) {
+                                    clientState.queriedInstances.add(normalizeDnsName(record.data));
+                                    try {
+                                        client.query?.(record.data, 'SRV');
+                                        client.query?.(record.data, 'TXT');
+                                    } catch (error) {
+                                        addWarning(
+                                            warnings,
+                                            `Could not request IPP service details: ${errorDetail(error)}`,
+                                        );
+                                    }
+                                }
+                            }
+                        }
                     }
                 });
                 client.on('warning', error => {
@@ -563,6 +787,7 @@ export async function discoverPrinters(options: PrinterDiscoveryOptions = {}): P
                         receivedAnnouncements++;
                         const parsed = parseService(service, type);
                         if (parsed) {
+                            acceptedAnnouncements++;
                             services.push(parsed);
                         }
                     });

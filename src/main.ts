@@ -651,7 +651,10 @@ class Ipp extends Adapter {
         }
         const controller = new AbortController();
         this.activeDiscoveryController = controller;
-        const scan = discoverPrinters({ signal: controller.signal });
+        const scan = discoverPrinters({
+            signal: controller.signal,
+            onDiagnostic: message => this.log.debug(message),
+        });
         this.activeDiscovery = scan;
         const clearScan = (): void => {
             if (this.activeDiscovery === scan) {
